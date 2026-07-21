@@ -1,0 +1,23 @@
+{
+  "feature_columns": [
+    "Time_Hour",
+    "Month",
+    "Road/Intersection Name",
+    "Spectator_Count",
+    "Traffic Volume",
+    "Average Speed",
+    "Travel Time Index",
+    "Road Capacity Utilization",
+    "Weather Conditions"
+  ],
+  "categorical_columns": [
+    "Road/Intersection Name",
+    "Weather Conditions"
+  ],
+  "accuracy": 1.0,
+  "target_classes": [
+    "High",
+    "Medium",
+    "Severe"
+  ]
+}

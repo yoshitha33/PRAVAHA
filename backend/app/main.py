@@ -1,8 +1,12 @@
 from fastapi import FastAPI
 
 from app.api.v1.auth import router as auth_router
+from app.api.v1.detect import router as detect_router
+from app.api.v1.events import router as events_router
 from app.api.v1.health import router as health_router
+from app.api.v1.route import router as route_router
 from app.api.v1.weather import router as weather_router
+from app.api.v1.websocket import router as websocket_router
 from app.api.predict import router as prediction_router
 from app.common.exception_handlers import register_exception_handlers
 from app.config.settings import get_settings
@@ -39,4 +43,8 @@ async def shutdown_event() -> None:
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(weather_router, prefix=settings.api_prefix)
+app.include_router(route_router, prefix=settings.api_prefix)
+app.include_router(detect_router, prefix=settings.api_prefix)
+app.include_router(events_router, prefix=settings.api_prefix)
+app.include_router(websocket_router)
 app.include_router(prediction_router, prefix=settings.api_prefix)

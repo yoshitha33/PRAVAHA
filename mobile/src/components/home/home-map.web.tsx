@@ -1,6 +1,4 @@
-import type { RefObject } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import MapView, { Marker, type MapPressEvent } from 'react-native-maps';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -8,7 +6,7 @@ import { Spacing } from '@/constants/theme';
 import type { DestinationOption } from '@/hooks/use-home-map';
 
 type HomeMapProps = {
-  mapRef: RefObject<MapView | null>;
+  mapRef: any;
   initialRegion: {
     latitude: number;
     longitude: number;
@@ -17,62 +15,50 @@ type HomeMapProps = {
   };
   currentLocation: { latitude: number; longitude: number } | null;
   destination: DestinationOption | null;
-  onMapPress: (event: MapPressEvent) => void;
+  onMapPress: (event: any) => void;
   onRecenter: () => void;
 };
 
 export function HomeMap({
-  mapRef,
-  initialRegion,
   currentLocation,
   destination,
-  onMapPress,
   onRecenter,
 }: HomeMapProps) {
+  const lat = destination?.coordinate.latitude ?? currentLocation?.latitude ?? 12.9716;
+  const lng = destination?.coordinate.longitude ?? currentLocation?.longitude ?? 77.5946;
+
+  // OpenStreetMap embed URL for Web preview
+  const osmUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.04}%2C${lat - 0.03}%2C${lng + 0.04}%2C${lat + 0.03}&layer=mapnik&marker=${lat}%2C${lng}`;
+
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
       <View style={styles.headerRow}>
-        <ThemedText type="smallBold">Map preview</ThemedText>
+        <ThemedText type="smallBold">Map preview (Web Mode)</ThemedText>
         <ThemedText themeColor="textSecondary" type="small">
-          Long press or tap to place a custom destination.
+          Interactive map preview for Web browser view.
         </ThemedText>
       </View>
 
       <View style={styles.mapFrame}>
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFillObject}
-          initialRegion={initialRegion}
-          onPress={onMapPress}
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-          showsCompass
-        >
-          {currentLocation ? (
-            <Marker
-              coordinate={currentLocation}
-              title="Your location"
-              description="Current position from the device"
-              pinColor="#208AEF"
-            />
-          ) : null}
-
-          {destination ? (
-            <Marker
-              coordinate={destination.coordinate}
-              title={destination.label}
-              description={destination.subtitle}
-              pinColor="#0F766E"
-            />
-          ) : null}
-        </MapView>
+        <iframe
+          title="PRAVAHA Web Map"
+          src={osmUrl}
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            borderRadius: Spacing.four,
+          }}
+        />
 
         <Pressable onPress={onRecenter} style={styles.recenterButton} accessibilityRole="button">
           <ThemedText type="smallBold">Recenter</ThemedText>
         </Pressable>
 
         <View style={styles.overlayPill}>
-          <ThemedText type="smallBold">Current location + destination pins</ThemedText>
+          <ThemedText type="smallBold">
+            {destination ? `Destination: ${destination.label}` : 'Bengaluru Central'}
+          </ThemedText>
         </View>
       </View>
     </ThemedView>
@@ -93,10 +79,7 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.four,
     backgroundColor: '#d7ecff',
     position: 'relative',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
+    overflow: 'hidden',
   },
   overlayPill: {
     position: 'absolute',
