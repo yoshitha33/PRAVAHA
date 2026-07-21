@@ -1,0 +1,87 @@
+# ==========================================
+# PRAVAHA Project .gitignore
+# Predict Bangalore traffic before congestion forms
+# ==========================================
+
+# ------------------------------------------
+# Environment & Secrets (Security)
+# ------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+
+# ------------------------------------------
+# Python Backend & Virtual Environments
+# (FastAPI / YOLOv8 / Data Science)
+# ------------------------------------------
+backend/venv/
+venv/
+.venv/
+env/
+ENV/
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------
+# Mobile & Frontend (React Native / Expo)
+# ------------------------------------------
+node_modules/
+mobile/node_modules/
+.expo/
+mobile/.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ------------------------------------------
+# Large Datasets & Media Files
+# (Preserve folder structure via .gitkeep)
+# ------------------------------------------
+datasets/*
+!datasets/.gitkeep
+videos/*
+!videos/.gitkeep
+
+# Common data formats
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# ------------------------------------------
+# AI & Machine Learning Model Weights
+# (YOLOv8 .pt, pickled models, ONNX, etc.)
+# ------------------------------------------
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.h5
+*.tflite
+*.pb
+*.bin
+*.weights
+models/*
+!models/.gitkeep
+
+# ------------------------------------------
+# IDEs, Editors & OS System Files
+# ------------------------------------------
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,86 @@
+{
+  "raw_target_column": "Congestion Level",
+  "normalized_target_column": "congestion_level",
+  "date_column": "Date",
+  "normalized_date_column": "date",
+  "target_strategy": "equal_width_bins",
+  "target_bin_edges": [
+    5.06543928705163,
+    36.77351933869572,
+    68.38675966934785,
+    100.0
+  ],
+  "feature_columns": [
+    "area_name",
+    "road_intersection_name",
+    "traffic_volume",
+    "average_speed",
+    "travel_time_index",
+    "road_capacity_utilization",
+    "incident_reports",
+    "environmental_impact",
+    "public_transport_usage",
+    "traffic_signal_compliance",
+    "parking_usage",
+    "pedestrian_and_cyclist_count",
+    "weather_conditions",
+    "roadwork_and_construction_activity",
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "dayofyear",
+    "is_weekend"
+  ],
+  "numeric_features": [
+    "traffic_volume",
+    "average_speed",
+    "travel_time_index",
+    "road_capacity_utilization",
+    "incident_reports",
+    "environmental_impact",
+    "public_transport_usage",
+    "traffic_signal_compliance",
+    "parking_usage",
+    "pedestrian_and_cyclist_count",
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "dayofyear",
+    "is_weekend"
+  ],
+  "categorical_features": [
+    "area_name",
+    "road_intersection_name",
+    "weather_conditions",
+    "roadwork_and_construction_activity"
+  ],
+  "row_count_after_cleaning": 8936,
+  "metrics": {
+    "accuracy": 0.9468680089485458,
+    "precision_weighted": 0.9463630429199634,
+    "recall_weighted": 0.9468680089485458,
+    "f1_weighted": 0.9465916673613529
+  },
+  "classification_report": "              precision    recall  f1-score   support\n\n        high       0.98      0.98      0.98      1292\n         low       0.84      0.82      0.83       120\n      medium       0.88      0.87      0.87       376\n\n    accuracy                           0.95      1788\n   macro avg       0.90      0.89      0.89      1788\nweighted avg       0.95      0.95      0.95      1788\n",
+  "confusion_matrix": [
+    [
+      98,
+      22,
+      0
+    ],
+    [
+      19,
+      326,
+      31
+    ],
+    [
+      0,
+      23,
+      1269
+    ]
+  ],
+  "train_rows": 7148,
+  "test_rows": 1788
+}
