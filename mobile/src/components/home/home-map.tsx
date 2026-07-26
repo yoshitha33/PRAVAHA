@@ -1,6 +1,6 @@
 import type { RefObject } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import MapView, { Marker, type MapPressEvent } from 'react-native-maps';
+import MapView, { Marker, Polyline, type MapPressEvent } from 'react-native-maps';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -19,6 +19,10 @@ type HomeMapProps = {
   destination: DestinationOption | null;
   onMapPress: (event: MapPressEvent) => void;
   onRecenter: () => void;
+  currentRoutePolyline?: Array<{ latitude: number; longitude: number }> | null;
+  alternativeRoutePolyline?: Array<{ latitude: number; longitude: number }> | null;
+  routeOrigin?: { latitude: number; longitude: number } | null;
+  routeDestination?: { latitude: number; longitude: number } | null;
 };
 
 export function HomeMap({
@@ -28,13 +32,21 @@ export function HomeMap({
   destination,
   onMapPress,
   onRecenter,
+  currentRoutePolyline,
+  alternativeRoutePolyline,
+  routeOrigin,
+  routeDestination,
 }: HomeMapProps) {
+  // Determine origin marker position: prioritize route calculation origin over device GPS
+  const originMarkerCoord = routeOrigin || currentLocation;
+  const destMarkerCoord = routeDestination || destination?.coordinate;
+
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
       <View style={styles.headerRow}>
-        <ThemedText type="smallBold">Map preview</ThemedText>
+        <ThemedText type="smallBold">A* Optimized Navigation Route</ThemedText>
         <ThemedText themeColor="textSecondary" type="small">
-          Long press or tap to place a custom destination.
+          Red (🔴) is the standard route. Green (🟢) is the A* congestion-optimized route.
         </ThemedText>
       </View>
 
@@ -44,25 +56,47 @@ export function HomeMap({
           style={StyleSheet.absoluteFillObject}
           initialRegion={initialRegion}
           onPress={onMapPress}
-          showsUserLocation={false}
-          showsMyLocationButton={false}
+          showsUserLocation={true}
+          showsMyLocationButton={true}
           showsCompass
+          mapType="standard"
         >
-          {currentLocation ? (
+          {/* Origin Marker */}
+          {originMarkerCoord ? (
             <Marker
-              coordinate={currentLocation}
-              title="Your location"
-              description="Current position from the device"
+              coordinate={originMarkerCoord}
+              title="Origin"
+              description="Starting location of the route"
               pinColor="#208AEF"
             />
           ) : null}
 
-          {destination ? (
+          {/* Destination Marker */}
+          {destMarkerCoord ? (
             <Marker
-              coordinate={destination.coordinate}
-              title={destination.label}
-              description={destination.subtitle}
-              pinColor="#0F766E"
+              coordinate={destMarkerCoord}
+              title="Destination"
+              description="End point of the route"
+              pinColor="#ef4444"
+            />
+          ) : null}
+
+          {/* Standard Route Polyline (Red 🔴) */}
+          {currentRoutePolyline && currentRoutePolyline.length > 0 ? (
+            <Polyline
+              coordinates={currentRoutePolyline}
+              strokeColor="#ef4444"
+              strokeWidth={5}
+              lineDashPattern={[6, 3]}
+            />
+          ) : null}
+
+          {/* A* Optimized Route Polyline (Green 🟢) */}
+          {alternativeRoutePolyline && alternativeRoutePolyline.length > 0 ? (
+            <Polyline
+              coordinates={alternativeRoutePolyline}
+              strokeColor="#22c55e"
+              strokeWidth={6}
             />
           ) : null}
         </MapView>
@@ -72,7 +106,9 @@ export function HomeMap({
         </Pressable>
 
         <View style={styles.overlayPill}>
-          <ThemedText type="smallBold">Current location + destination pins</ThemedText>
+          <ThemedText type="smallBold">
+            {currentRoutePolyline ? '💡 Dual-Route Comparison Mode Active' : '📍 Place markers to calculate route'}
+          </ThemedText>
         </View>
       </View>
     </ThemedView>

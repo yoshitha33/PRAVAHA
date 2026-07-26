@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -206,24 +207,24 @@ export default function HomeScreen() {
               onPress={() => router.push('/map')}
             >
               <View style={[styles.tileIconBg, { backgroundColor: '#e0f2fe' }]}>
-                <ThemedText style={styles.tileIcon}>🗺️</ThemedText>
+                <Ionicons name="map" size={22} color="#0284c7" />
               </View>
               <ThemedText type="smallBold" style={styles.tileLabelText}>Navigate</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.tileSubtext}>
-                Interactive Map & Waypoints
+                A* Route Optimizer & Map
               </ThemedText>
             </Pressable>
 
             <Pressable
               style={({ pressed }) => [styles.actionTile, pressed && styles.pressedTile]}
-              onPress={() => router.push('/map')}
+              onPress={() => router.push('/predict')}
             >
               <View style={[styles.tileIconBg, { backgroundColor: '#fef3c7' }]}>
-                <ThemedText style={styles.tileIcon}>🛣️</ThemedText>
+                <Ionicons name="speedometer" size={22} color="#d97706" />
               </View>
               <ThemedText type="smallBold" style={styles.tileLabelText}>Road Status</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.tileSubtext}>
-                Calculate Road DNA
+                Road DNA & Health Index
               </ThemedText>
             </Pressable>
 
@@ -232,11 +233,11 @@ export default function HomeScreen() {
               onPress={() => router.push('/detect')}
             >
               <View style={[styles.tileIconBg, { backgroundColor: '#dcfce7' }]}>
-                <ThemedText style={styles.tileIcon}>🎥</ThemedText>
+                <Ionicons name="videocam" size={22} color="#16a34a" />
               </View>
               <ThemedText type="smallBold" style={styles.tileLabelText}>Traffic AI</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.tileSubtext}>
-                YOLOv8 Photo Count
+                YOLOv8 Camera Vehicle Count
               </ThemedText>
             </Pressable>
 
@@ -245,11 +246,11 @@ export default function HomeScreen() {
               onPress={() => router.push('/alerts')}
             >
               <View style={[styles.tileIconBg, { backgroundColor: '#fee2e2' }]}>
-                <ThemedText style={styles.tileIcon}>🔔</ThemedText>
+                <Ionicons name="notifications" size={22} color="#dc2626" />
               </View>
               <ThemedText type="smallBold" style={styles.tileLabelText}>Live Alerts</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.tileSubtext}>
-                Monsoon Rain Warnings
+                Rain & Traffic Warnings
               </ThemedText>
             </Pressable>
           </View>
