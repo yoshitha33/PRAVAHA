@@ -53,7 +53,7 @@ export function HomeMap({
       <View style={styles.mapFrame}>
         <MapView
           ref={mapRef}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           initialRegion={initialRegion}
           onPress={onMapPress}
           showsUserLocation={true}

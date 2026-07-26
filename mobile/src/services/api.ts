@@ -77,12 +77,18 @@ export type RouteResponse = {
   alternative_route: RouteSegment;
 };
 
-export type DetectionResponse = {
-  cars: number;
-  bikes: number;
+export type VehicleCounts = {
+  car: number;
+  motorcycle: number;
   bus: number;
   truck: number;
-  density: 'Low' | 'Medium' | 'High';
+};
+
+export type DetectionResponse = {
+  vehicle_counts: VehicleCounts;
+  total_vehicles: number;
+  traffic_density: 'Low' | 'Medium' | 'High';
+  source_type: 'image' | 'video' | 'demo';
 };
 
 export type AlertItem = {
@@ -233,18 +239,26 @@ export async function calculateRoute(origin: string, destination: string): Promi
   }
 }
 
-export async function runYoloDetection(): Promise<DetectionResponse> {
+/**
+ * Upload an image or video file to the YOLO detection endpoint.
+ * Pass a FormData object that has a "file" field already appended.
+ * Returns parsed DetectionResponse on success, or a typed error object.
+ */
+export async function runYoloDetection(
+  formData: FormData,
+): Promise<{ data: DetectionResponse; error: null } | { data: null; error: string }> {
   try {
-    const response = await apiClient.post<DetectionResponse>('/api/v1/detect');
-    return response.data;
-  } catch {
-    return {
-      cars: 63,
-      bikes: 44,
-      bus: 7,
-      truck: 5,
-      density: 'High',
-    };
+    const response = await apiClient.post<DetectionResponse>('/api/v1/detect', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000, // videos can take longer
+    });
+    return { data: response.data, error: null };
+  } catch (err: any) {
+    const detail: string =
+      err?.response?.data?.detail ??
+      err?.message ??
+      'Detection failed. Check your connection and try again.';
+    return { data: null, error: detail };
   }
 }
 

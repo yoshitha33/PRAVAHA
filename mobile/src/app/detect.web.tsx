@@ -1,416 +1,384 @@
-import { useState, ChangeEvent } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ChangeEvent, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
-import { apiClient, type DetectionResponse } from '@/services/api';
+import { Spacing } from '@/constants/theme';
+import { runYoloDetection, type DetectionResponse } from '@/services/api';
 
-const SAMPLE_FEEDS = [
-  {
-    id: 'silk-board-cctv',
-    name: 'Silk Board Junction CCTV',
-    uri: 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=800&q=80',
-    cars: 63,
-    bikes: 44,
-    bus: 7,
-    truck: 5,
-    density: 'High' as const,
+// ─── Severity config ──────────────────────────────────────────────────────────
+const SEVERITY: Record<
+  'Low' | 'Medium' | 'High',
+  { label: string; color: string; bg: string; border: string; icon: string; desc: string }
+> = {
+  Low: {
+    label: 'Low',
+    color: '#059669',
+    bg: '#ecfdf5',
+    border: '#a7f3d0',
+    icon: 'checkmark-circle-outline',
+    desc: 'Road is clear — free-flowing traffic conditions.',
   },
-  {
-    id: 'marathahalli-cctv',
-    name: 'Marathahalli Flyover CCTV',
-    uri: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=800&q=80',
-    cars: 28,
-    bikes: 19,
-    bus: 3,
-    truck: 2,
-    density: 'Medium' as const,
+  Medium: {
+    label: 'Medium',
+    color: '#d97706',
+    bg: '#fffbeb',
+    border: '#fde68a',
+    icon: 'alert-circle-outline',
+    desc: 'Moderate congestion — minor delays expected.',
   },
-];
+  High: {
+    label: 'High',
+    color: '#dc2626',
+    bg: '#fef2f2',
+    border: '#fca5a5',
+    icon: 'warning-outline',
+    desc: 'Heavy traffic — significant delays ahead.',
+  },
+};
 
+// ─── Animated bar (web — plain View width %) ─────────────────────────────────
+function StaticBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <View style={s.barTrack}>
+      <View style={[s.barFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+    </View>
+  );
+}
+
+// ─── Vehicle row ──────────────────────────────────────────────────────────────
+function VehicleRow({
+  emoji, label, count, total, color,
+}: {
+  emoji: string; label: string; count: number; total: number; color: string;
+}) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <View style={s.vehicleRow}>
+      <Text style={s.vehicleEmoji}>{emoji}</Text>
+      <View style={s.vehicleInfo}>
+        <View style={s.vehicleLabelRow}>
+          <Text style={s.vehicleLabel}>{label}</Text>
+          <Text style={[s.vehicleCount, { color }]}>{count}</Text>
+        </View>
+        <StaticBar pct={pct} color={color} />
+        <Text style={s.vehiclePct}>{pct}% of total</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
 export default function TrafficDetectionScreen() {
-  const [selectedImage, setSelectedImage] = useState<string | null>(SAMPLE_FEEDS[0].uri);
-  const [selectedFeedName, setSelectedFeedName] = useState<string>(SAMPLE_FEEDS[0].name);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [detectionResult, setDetectionResult] = useState<DetectionResponse>({
-    cars: SAMPLE_FEEDS[0].cars,
-    bikes: SAMPLE_FEEDS[0].bikes,
-    bus: SAMPLE_FEEDS[0].bus,
-    truck: SAMPLE_FEEDS[0].truck,
-    density: SAMPLE_FEEDS[0].density,
-  });
+  const [result, setResult] = useState<DetectionResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [inferenceMs, setInferenceMs] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function handleFileSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const objectUrl = URL.createObjectURL(file);
-    setSelectedImage(objectUrl);
-    setSelectedFeedName(`Device Upload: ${file.name}`);
+    setImageUri(objectUrl);
+    setResult(null);
+    setErrorMsg(null);
+    setInferenceMs(null);
     setLoading(true);
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const res = await apiClient.post<DetectionResponse>('/api/v1/detect', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setDetectionResult(res.data);
-    } catch {
-      // Dynamic fallback if backend offline
-      setDetectionResult({
-        cars: 52,
-        bikes: 31,
-        bus: 6,
-        truck: 4,
-        density: 'High',
-      });
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const t0 = Date.now();
+      const res = await runYoloDetection(formData as any);
+      const elapsed = Date.now() - t0;
+
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else {
+        setResult(res.data);
+        setInferenceMs(elapsed);
+      }
     } finally {
       setLoading(false);
+      // Reset input so the same file can be picked again
+      if (inputRef.current) inputRef.current.value = '';
     }
   }
 
-  function handleSelectSample(feed: typeof SAMPLE_FEEDS[0]) {
-    setSelectedImage(feed.uri);
-    setSelectedFeedName(feed.name);
-    setLoading(true);
-
-    setTimeout(() => {
-      setDetectionResult({
-        cars: feed.cars,
-        bikes: feed.bikes,
-        bus: feed.bus,
-        truck: feed.truck,
-        density: feed.density,
-      });
-      setLoading(false);
-    }, 400);
+  function reset() {
+    setImageUri(null);
+    setResult(null);
+    setErrorMsg(null);
+    setInferenceMs(null);
   }
 
+  const severity = result ? SEVERITY[result.traffic_density] : null;
+
   return (
-    <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <ThemedText type="subtitle">🎥 Real-Time Traffic AI Detection (Web Mode)</ThemedText>
-          <ThemedText themeColor="textSecondary" type="small">
-            Upload traffic photos/videos directly from your device storage to evaluate with YOLOv8.
-          </ThemedText>
+    <ScrollView style={s.root} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+
+      {/* ── Header ── */}
+      <View style={s.header}>
+        <View style={s.titleRow}>
+          <Ionicons name="eye-outline" size={26} color="#0284c7" />
+          <Text style={s.title}>Traffic Detection</Text>
+        </View>
+        <Text style={s.subtitle}>
+          Upload a traffic photo — YOLOv8 counts every vehicle and rates severity in seconds.
+        </Text>
+      </View>
+
+      {/* ── Upload card ── */}
+      <View style={s.uploadCard}>
+        <View style={s.uploadCardHeader}>
+          <Ionicons name="cloud-upload-outline" size={18} color="#0f172a" />
+          <Text style={s.uploadCardTitle}>Upload Traffic Image</Text>
         </View>
 
-        {/* Upload Action Card */}
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="smallBold">Device Upload & Demo Feeds</ThemedText>
-
-          {/* HTML Native Device File Picker */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label
-              htmlFor="device-file-input"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                backgroundColor: '#208AEF',
-                color: '#ffffff',
-                padding: '14px 18px',
-                borderRadius: 12,
-                cursor: 'pointer',
-                fontWeight: 700,
-                fontSize: 15,
-              }}
-            >
-              <span style={{ fontSize: 24 }}>📷</span>
-              <div>
-                <div>Choose Photo / Video from Device</div>
-                <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.9 }}>
-                  Opens your computer or phone's file picker
-                </div>
-              </div>
-            </label>
-            <input
-              id="device-file-input"
-              type="file"
-              accept="image/*,video/*"
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
+        {/* Native HTML file input */}
+        <label
+          htmlFor="detect-web-input"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            backgroundColor: '#0284c7',
+            color: '#ffffff',
+            padding: '13px 18px',
+            borderRadius: 14,
+            cursor: 'pointer',
+            fontWeight: 800,
+            fontSize: 15,
+          }}
+        >
+          <span style={{ fontSize: 22 }}>�</span>
+          <div>
+            <div>Choose Traffic Image</div>
+            <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>
+              JPEG · PNG · WEBP supported
+            </div>
           </div>
+        </label>
+        <input
+          id="detect-web-input"
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/bmp"
+          onChange={handleFileSelect}
+          style={{ display: 'none' }}
+        />
 
-          <View style={styles.divider}>
-            <ThemedText type="small" themeColor="textSecondary">or pick a sample feed</ThemedText>
-          </View>
+        <Text style={s.uploadHint}>Max confidence at 640 × 640 px · Powered by YOLOv8n COCO</Text>
+      </View>
 
-          <View style={styles.sampleFeedRow}>
-            {SAMPLE_FEEDS.map((feed) => (
-              <Pressable
-                key={feed.id}
-                style={[
-                  styles.feedChip,
-                  selectedFeedName === feed.name && styles.selectedFeedChip,
-                ]}
-                onPress={() => handleSelectSample(feed)}
-              >
-                <ThemedText
-                  type="smallBold"
-                  style={selectedFeedName === feed.name ? styles.selectedChipText : styles.chipText}
-                >
-                  📹 {feed.name}
-                </ThemedText>
+      {/* ── Image preview ── */}
+      {imageUri ? (
+        <View style={s.previewCard}>
+          <View style={s.previewHeader}>
+            <Text style={s.previewTitle}>Selected Image</Text>
+            {!loading && (
+              <Pressable onPress={reset} hitSlop={8}>
+                <Ionicons name="close-circle-outline" size={22} color="#64748b" />
               </Pressable>
-            ))}
+            )}
           </View>
-        </ThemedView>
-
-        {/* Real-Time Preview Container */}
-        <View style={styles.previewContainer}>
-          <ThemedText type="smallBold" style={styles.previewLabel}>
-            Selected Feed: {selectedFeedName}
-          </ThemedText>
-
-          {selectedImage ? (
-            <View style={styles.imageWrapper}>
-              <Image source={{ uri: selectedImage }} style={styles.previewImage} resizeMode="cover" />
-
-              {/* Bounding Box Overlay Simulation */}
-              <View style={styles.overlayBox1}>
-                <ThemedText style={styles.boxTag}>Car 96%</ThemedText>
-              </View>
-              <View style={styles.overlayBox2}>
-                <ThemedText style={styles.boxTag}>Bus 92%</ThemedText>
-              </View>
-              <View style={styles.overlayBox3}>
-                <ThemedText style={styles.boxTag}>Bike 89%</ThemedText>
-              </View>
-            </View>
-          ) : null}
+          <Image source={{ uri: imageUri }} style={s.previewImage} resizeMode="cover" />
         </View>
+      ) : (
+        <View style={s.emptyState}>
+          <Ionicons name="image-outline" size={52} color="#cbd5e1" />
+          <Text style={s.emptyStateText}>No image selected</Text>
+          <Text style={s.emptyStateSub}>Use the button above to pick a traffic image</Text>
+        </View>
+      )}
 
-        {/* Loading Indicator */}
-        {loading ? (
-          <View style={styles.loaderBox}>
-            <ActivityIndicator size="large" color={Colors.light.tint} />
-            <ThemedText type="small" themeColor="textSecondary">
-              Analyzing photo with YOLOv8 Neural Network...
-            </ThemedText>
+      {/* ── Loading ── */}
+      {loading && (
+        <View style={s.loadingCard}>
+          <ActivityIndicator size="large" color="#0284c7" />
+          <Text style={s.loadingTitle}>Analyzing with YOLOv8…</Text>
+          <Text style={s.loadingSteps}>Detecting vehicles · Counting objects · Scoring severity</Text>
+        </View>
+      )}
+
+      {/* ── Error ── */}
+      {errorMsg && !loading && (
+        <View style={s.errorCard}>
+          <Ionicons name="alert-circle-outline" size={22} color="#dc2626" />
+          <Text style={s.errorText}>{errorMsg}</Text>
+        </View>
+      )}
+
+      {/* ── Results ── */}
+      {result && !loading && severity && (
+        <View style={s.resultsContainer}>
+
+          {/* Severity hero */}
+          <View style={[s.severityHero, { borderColor: severity.border, backgroundColor: severity.bg }]}>
+            <View style={s.severityLeft}>
+              <Ionicons name={severity.icon as any} size={32} color={severity.color} />
+              <View>
+                <Text style={s.severityLabel}>Traffic Severity</Text>
+                <Text style={[s.severityValue, { color: severity.color }]}>{severity.label}</Text>
+              </View>
+            </View>
+            <View style={[s.severityBadge, { backgroundColor: severity.color }]}>
+              <Text style={s.severityBadgeText}>{result.total_vehicles} vehicles</Text>
+            </View>
           </View>
-        ) : null}
 
-        {/* Dynamic Detection Output */}
-        {detectionResult && !loading ? (
-          <View style={styles.resultsCard}>
-            <View style={styles.resHeader}>
-              <ThemedText type="smallBold" style={styles.resTitle}>
-                YOLOv8 AI Detection Output
-              </ThemedText>
-              <View
-                style={[
-                  styles.densityBadge,
-                  { backgroundColor: detectionResult.density === 'High' ? '#ef4444' : '#eab308' },
-                ]}
-              >
-                <ThemedText style={styles.densityText}>
-                  Density: {detectionResult.density}
-                </ThemedText>
+          <Text style={[s.severityDesc, { color: severity.color }]}>{severity.desc}</Text>
+
+          {/* Breakdown */}
+          <View style={s.breakdownCard}>
+            <View style={s.breakdownHeader}>
+              <Ionicons name="bar-chart-outline" size={18} color="#0f172a" />
+              <Text style={s.breakdownTitle}>Vehicle Breakdown</Text>
+              <View style={s.totalPill}>
+                <Text style={s.totalPillText}>Total: {result.total_vehicles}</Text>
               </View>
             </View>
 
-            {/* Counts Grid */}
-            <View style={styles.countsGrid}>
-              <View style={styles.countTile}>
-                <ThemedText style={styles.tileEmoji}>🚗</ThemedText>
-                <ThemedText type="small" style={styles.tileLabel}>Cars</ThemedText>
-                <ThemedText style={styles.tileNumber}>{detectionResult.cars}</ThemedText>
-              </View>
-
-              <View style={styles.countTile}>
-                <ThemedText style={styles.tileEmoji}>🏍️</ThemedText>
-                <ThemedText type="small" style={styles.tileLabel}>Bikes</ThemedText>
-                <ThemedText style={styles.tileNumber}>{detectionResult.bikes}</ThemedText>
-              </View>
-
-              <View style={styles.countTile}>
-                <ThemedText style={styles.tileEmoji}>🚌</ThemedText>
-                <ThemedText type="small" style={styles.tileLabel}>Bus</ThemedText>
-                <ThemedText style={styles.tileNumber}>{detectionResult.bus}</ThemedText>
-              </View>
-
-              <View style={styles.countTile}>
-                <ThemedText style={styles.tileEmoji}>🚚</ThemedText>
-                <ThemedText type="small" style={styles.tileLabel}>Truck</ThemedText>
-                <ThemedText style={styles.tileNumber}>{detectionResult.truck}</ThemedText>
-              </View>
-            </View>
-
-            <ThemedText type="small" style={styles.summaryFooter}>
-              Vehicle Density: <ThemedText type="smallBold">{detectionResult.density}</ThemedText> · Image Inferred in 42ms
-            </ThemedText>
+            <VehicleRow emoji="🚗" label="Cars"        count={result.vehicle_counts.car}        total={result.total_vehicles} color="#0284c7" />
+            <View style={s.divider} />
+            <VehicleRow emoji="🏍️" label="Motorcycles" count={result.vehicle_counts.motorcycle} total={result.total_vehicles} color="#7c3aed" />
+            <View style={s.divider} />
+            <VehicleRow emoji="🚌" label="Buses"       count={result.vehicle_counts.bus}        total={result.total_vehicles} color="#d97706" />
+            <View style={s.divider} />
+            <VehicleRow emoji="🚚" label="Trucks"      count={result.vehicle_counts.truck}      total={result.total_vehicles} color="#dc2626" />
           </View>
-        ) : null}
-      </ScrollView>
-    </ThemedView>
+
+          {/* Meta chips */}
+          <View style={s.metaRow}>
+            <View style={s.metaChip}>
+              <Ionicons name="flash-outline" size={13} color="#0284c7" />
+              <Text style={s.metaChipText}>{inferenceMs != null ? `${inferenceMs} ms` : '—'}</Text>
+            </View>
+            <View style={s.metaChip}>
+              <Ionicons name="hardware-chip-outline" size={13} color="#0284c7" />
+              <Text style={s.metaChipText}>YOLOv8n · COCO</Text>
+            </View>
+            <View style={s.metaChip}>
+              <Ionicons name="image-outline" size={13} color="#0284c7" />
+              <Text style={s.metaChipText}>{result.source_type}</Text>
+            </View>
+          </View>
+
+          {/* Scan again */}
+          <Pressable
+            style={({ pressed }) => [s.scanAgainBtn, pressed && { opacity: 0.75 }]}
+            onPress={reset}
+          >
+            <Ionicons name="refresh-outline" size={18} color="#ffffff" />
+            <Text style={s.scanAgainText}>Scan Another Image</Text>
+          </Pressable>
+        </View>
+      )}
+
+      <View style={{ height: 40 }} />
+    </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#f8fafc' },
+  content: { padding: Spacing.four, gap: Spacing.four },
+
+  header: { gap: Spacing.two },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  title: { fontSize: 24, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 },
+  subtitle: { fontSize: 13, color: '#64748b', fontWeight: '500', lineHeight: 19 },
+
+  uploadCard: {
+    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 14,
+    borderWidth: 1, borderColor: '#e2e8f0',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
-  content: {
-    padding: Spacing.four,
-    gap: Spacing.four,
+  uploadCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  uploadCardTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  uploadHint: { fontSize: 11, color: '#94a3b8', textAlign: 'center' },
+
+  previewCard: {
+    backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden',
+    borderWidth: 1, borderColor: '#e2e8f0',
   },
-  header: {
-    gap: Spacing.one,
+  previewHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: Spacing.four, paddingVertical: 12,
   },
-  card: {
-    borderRadius: Spacing.four,
-    padding: Spacing.four,
-    gap: Spacing.three,
+  previewTitle: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  previewImage: { width: '100%', height: 260, backgroundColor: '#0f172a' },
+
+  emptyState: {
+    backgroundColor: '#ffffff', borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0',
+    borderStyle: 'dashed', paddingVertical: 40, alignItems: 'center', gap: 8,
   },
-  divider: {
-    alignItems: 'center',
-    marginVertical: Spacing.one,
+  emptyStateText: { fontSize: 15, fontWeight: '700', color: '#94a3b8' },
+  emptyStateSub: { fontSize: 12, color: '#cbd5e1', textAlign: 'center', paddingHorizontal: 32 },
+
+  loadingCard: {
+    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.five,
+    alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#e0f2fe',
   },
-  sampleFeedRow: {
-    gap: Spacing.two,
+  loadingTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a', textAlign: 'center' },
+  loadingSteps: { fontSize: 12, color: '#64748b', textAlign: 'center' },
+
+  errorCard: {
+    backgroundColor: '#fef2f2', borderRadius: 16, padding: Spacing.four,
+    borderWidth: 1, borderColor: '#fca5a5', flexDirection: 'row', gap: 10, alignItems: 'flex-start',
   },
-  feedChip: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+  errorText: { fontSize: 13, color: '#991b1b', fontWeight: '600', flex: 1 },
+
+  resultsContainer: { gap: Spacing.three },
+
+  severityHero: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 18, borderWidth: 1.5, padding: Spacing.four,
   },
-  selectedFeedChip: {
-    backgroundColor: '#0284c7',
-    borderColor: '#0284c7',
+  severityLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  severityLabel: { fontSize: 11, fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.6 },
+  severityValue: { fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  severityBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  severityBadgeText: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
+  severityDesc: { fontSize: 13, fontWeight: '600', marginTop: -6 },
+
+  breakdownCard: {
+    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 14,
+    borderWidth: 1, borderColor: '#e2e8f0',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
-  chipText: {
-    color: '#334155',
+  breakdownHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  breakdownTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a', flex: 1 },
+  totalPill: { backgroundColor: '#f1f5f9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  totalPillText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+
+  vehicleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  vehicleEmoji: { fontSize: 26, width: 36, textAlign: 'center' },
+  vehicleInfo: { flex: 1, gap: 4 },
+  vehicleLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  vehicleLabel: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+  vehicleCount: { fontSize: 20, fontWeight: '900' },
+  vehiclePct: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
+
+  barTrack: { height: 7, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 4 },
+  divider: { height: 1, backgroundColor: '#f1f5f9' },
+
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  metaChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#f0f9ff', paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 10, borderWidth: 1, borderColor: '#bae6fd',
   },
-  selectedChipText: {
-    color: '#ffffff',
+  metaChipText: { fontSize: 12, fontWeight: '700', color: '#0369a1' },
+
+  scanAgainBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#0284c7', paddingVertical: 14, borderRadius: 14,
   },
-  previewContainer: {
-    gap: Spacing.two,
-  },
-  previewLabel: {
-    color: '#475569',
-  },
-  imageWrapper: {
-    height: 240,
-    borderRadius: Spacing.four,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: '#000000',
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  overlayBox1: {
-    position: 'absolute',
-    left: '20%',
-    top: '30%',
-    width: 70,
-    height: 50,
-    borderWidth: 2,
-    borderColor: '#22c55e',
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-    borderRadius: 4,
-  },
-  overlayBox2: {
-    position: 'absolute',
-    left: '55%',
-    top: '40%',
-    width: 90,
-    height: 65,
-    borderWidth: 2,
-    borderColor: '#eab308',
-    backgroundColor: 'rgba(234, 179, 8, 0.2)',
-    borderRadius: 4,
-  },
-  overlayBox3: {
-    position: 'absolute',
-    left: '40%',
-    top: '60%',
-    width: 45,
-    height: 35,
-    borderWidth: 2,
-    borderColor: '#38bdf8',
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
-    borderRadius: 4,
-  },
-  boxTag: {
-    color: '#ffffff',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    fontSize: 9,
-    fontWeight: '800',
-    paddingHorizontal: 3,
-    alignSelf: 'flex-start',
-  },
-  loaderBox: {
-    alignItems: 'center',
-    padding: Spacing.four,
-    gap: Spacing.two,
-  },
-  resultsCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: Spacing.four,
-    padding: Spacing.four,
-    gap: Spacing.four,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    elevation: 3,
-  },
-  resHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  resTitle: {
-    color: '#0f172a',
-  },
-  densityBadge: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
-    borderRadius: 999,
-  },
-  densityText: {
-    color: '#ffffff',
-    fontWeight: '800',
-  },
-  countsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-  },
-  countTile: {
-    width: '48%',
-    backgroundColor: '#f8fafc',
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    alignItems: 'center',
-    gap: Spacing.one,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  tileEmoji: {
-    fontSize: 24,
-  },
-  tileLabel: {
-    color: '#64748b',
-  },
-  tileNumber: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: Colors.light.tint,
-  },
-  summaryFooter: {
-    color: '#64748b',
-    textAlign: 'center',
-  },
+  scanAgainText: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
 });

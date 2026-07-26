@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   },
   selectButton: {
     height: 52,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: '#0284c7',
     borderRadius: Spacing.three,
     justifyContent: 'center',
     alignItems: 'center',

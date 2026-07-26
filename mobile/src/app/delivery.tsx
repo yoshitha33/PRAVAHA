@@ -87,7 +87,7 @@ export default function DeliveryScreen() {
 
         {/* Route Optimization Analytics */}
         {loading ? (
-          <ActivityIndicator size="large" color={Colors.light.tint} style={{ marginTop: 20 }} />
+          <ActivityIndicator size="large" color={'#0284c7'} style={{ marginTop: 20 }} />
         ) : deliveryRoute ? (
           <View style={styles.optimizedCard}>
             <View style={styles.optHeader}>

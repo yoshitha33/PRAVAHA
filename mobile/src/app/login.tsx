@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     height: 48,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: '#0284c7',
     borderRadius: Spacing.two,
     justifyContent: 'center',
     alignItems: 'center',
@@ -185,10 +185,10 @@ const styles = StyleSheet.create({
     padding: Spacing.two,
     borderRadius: Spacing.two,
     borderLeftWidth: 4,
-    borderLeftColor: Colors.light.tint,
+    borderLeftColor: '#0284c7',
   },
   messageText: {
-    color: Colors.light.tint,
+    color: '#0284c7',
   },
   togglePressable: {
     alignItems: 'center',

@@ -56,7 +56,7 @@ export function PredictionMap({
         <MapView
           ref={mapRef}
           provider={provider}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           initialRegion={initialRegion}
           onPress={onMapPress}
           showsUserLocation={false}

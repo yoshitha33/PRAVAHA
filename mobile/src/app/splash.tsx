@@ -33,7 +33,7 @@ export default function SplashScreen() {
         </ThemedText>
 
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color={Colors.light.tint} />
+          <ActivityIndicator size="large" color={'#0284c7'} />
           <ThemedText type="small" themeColor="textSecondary">
             Loading AI Prediction Models...
           </ThemedText>
@@ -58,10 +58,10 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 24,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: '#0284c7',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.light.tint,
+    shadowColor: '#0284c7',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 16,
