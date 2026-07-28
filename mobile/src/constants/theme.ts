@@ -63,3 +63,11 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+/**
+ * On web, NativeTabs renders a fixed top navbar (~52px).
+ * Every screen's root ScrollView / View needs this as paddingTop so content
+ * isn't hidden behind the nav bar. On native the tab bar is at the bottom
+ * so no top offset is needed.
+ */
+export const NAV_HEIGHT = Platform.OS === 'web' ? 52 : 0;

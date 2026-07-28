@@ -7,6 +7,7 @@ from app.api.v1.events import router as events_router
 from app.api.v1.health import router as health_router
 from app.api.v1.route import router as route_router
 from app.api.v1.road_status import router as road_status_router
+from app.api.v1.social_intel import router as social_intel_router
 from app.api.v1.weather import router as weather_router
 from app.api.v1.websocket import router as websocket_router
 from app.api.predict import router as prediction_router
@@ -57,5 +58,6 @@ app.include_router(route_router, prefix=settings.api_prefix)
 app.include_router(road_status_router, prefix=settings.api_prefix)
 app.include_router(detect_router, prefix=settings.api_prefix)
 app.include_router(events_router, prefix=settings.api_prefix)
+app.include_router(social_intel_router, prefix=settings.api_prefix)
 app.include_router(websocket_router)
 app.include_router(prediction_router, prefix=settings.api_prefix)

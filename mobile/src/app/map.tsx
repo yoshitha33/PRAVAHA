@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 import { HomeMap } from '@/components/home/home-map';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { NAV_HEIGHT } from '@/constants/theme';
 import { useHomeMap } from '@/hooks/use-home-map';
 import { calculateRoute, type RouteResponse } from '@/services/api';
 
@@ -38,13 +39,13 @@ function getCongestionCauses(congestion: string, delayReason: string) {
 }
 
 export default function MapScreen() {
-  const router = useRouter();
   const homeMap = useHomeMap();
   const [originInput, setOriginInput] = useState('Marathahalli, Bengaluru');
   const [destinationInput, setDestinationInput] = useState('Silk Board Junction, Bengaluru');
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [routeResult, setRouteResult] = useState<RouteResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     async function loadGPS() {
@@ -296,16 +297,134 @@ export default function MapScreen() {
               <ThemedText style={styles.logicText}>{routeResult.reroute_reason}</ThemedText>
             </View>
 
+            {/* View Full Route Details */}
+            <Pressable
+              style={({ pressed }) => [styles.detailsBtn, pressed && styles.pressed]}
+              onPress={() => setShowDetails(true)}
+            >
+              <Text style={styles.detailsBtnText}>📋 View Full Route Details & Analysis</Text>
+              <Text style={styles.detailsBtnArrow}>→</Text>
+            </Pressable>
+
           </View>
         ) : null}
       </ScrollView>
+
+      {/* ── Route Details Modal ─────────────────────────────────────────── */}
+      {routeResult && (
+        <Modal
+          visible={showDetails}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowDetails(false)}
+        >
+          <View style={styles.modalRoot}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Route Details & Analysis</Text>
+              <Pressable onPress={() => setShowDetails(false)} hitSlop={12} style={styles.modalClose}>
+                <Ionicons name="close" size={22} color="#0f172a" />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+
+              {/* Origin → Destination */}
+              <Text style={styles.modalRoute}>
+                📍 {routeResult.origin}  →  {routeResult.destination}
+              </Text>
+
+              {/* Reason Behind Rerouting */}
+              <View style={styles.detailReasonCard}>
+                <View style={styles.detailReasonHeader}>
+                  <Ionicons name="analytics-outline" size={18} color="#0369a1" />
+                  <Text style={styles.detailReasonTitle}>Why the Normal Route Is Slow</Text>
+                  <View style={styles.savedChip}>
+                    <Text style={styles.savedChipText}>⚡ {routeResult.time_saved}</Text>
+                  </View>
+                </View>
+                <Text style={styles.detailReasonBody}>{routeResult.reroute_reason}</Text>
+                {routeResult.current_route.delay_reason ? (
+                  <View style={styles.delayAlert}>
+                    <Ionicons name="warning-outline" size={15} color="#b91c1c" />
+                    <Text style={styles.delayAlertText}>{routeResult.current_route.delay_reason}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Normal Route Card */}
+              <View style={[styles.detailRouteCard, styles.detailCardRed]}>
+                <View style={styles.detailCardHeader}>
+                  <View style={styles.detailRiskBadge}>
+                    <Text style={styles.detailRiskText}>⚠️ {routeResult.current_route.risk} Risk</Text>
+                  </View>
+                  <Text style={styles.detailCardLabel}>Normal Route</Text>
+                </View>
+                <Text style={styles.detailRouteName} numberOfLines={2}>{routeResult.current_route.name}</Text>
+                <View style={styles.detailMetricsRow}>
+                  <View style={styles.detailMetric}>
+                    <Text style={styles.detailMetricLabel}>Distance</Text>
+                    <Text style={styles.detailMetricValue}>{routeResult.current_route.distance}</Text>
+                  </View>
+                  <View style={styles.detailMetric}>
+                    <Text style={styles.detailMetricLabel}>ETA</Text>
+                    <Text style={[styles.detailMetricValue, { color: '#dc2626' }]}>{routeResult.current_route.eta}</Text>
+                  </View>
+                  <View style={styles.detailMetric}>
+                    <Text style={styles.detailMetricLabel}>Road DNA</Text>
+                    <Text style={[styles.detailMetricValue, { color: '#ef4444' }]}>{routeResult.current_route.road_dna}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* A* Route Card */}
+              <View style={[styles.detailRouteCard, styles.detailCardGreen]}>
+                <View style={styles.detailCardHeader}>
+                  <View style={[styles.detailRiskBadge, { backgroundColor: '#15803d' }]}>
+                    <Text style={styles.detailRiskText}>✅ A* Optimized</Text>
+                  </View>
+                  <Text style={styles.detailCardLabel}>Recommended Route</Text>
+                </View>
+                <Text style={styles.detailRouteName} numberOfLines={2}>{routeResult.alternative_route.name}</Text>
+                <View style={styles.detailMetricsRow}>
+                  <View style={styles.detailMetric}>
+                    <Text style={styles.detailMetricLabel}>Distance</Text>
+                    <Text style={styles.detailMetricValue}>{routeResult.alternative_route.distance}</Text>
+                  </View>
+                  <View style={styles.detailMetric}>
+                    <Text style={styles.detailMetricLabel}>ETA</Text>
+                    <Text style={[styles.detailMetricValue, { color: '#16a34a' }]}>{routeResult.alternative_route.eta}</Text>
+                  </View>
+                  <View style={styles.detailMetric}>
+                    <Text style={styles.detailMetricLabel}>Road DNA</Text>
+                    <Text style={[styles.detailMetricValue, { color: '#16a34a' }]}>{routeResult.alternative_route.road_dna}</Text>
+                  </View>
+                </View>
+                <Text style={styles.detailSavings}>
+                  💡 DNA reduced from {routeResult.current_route.road_dna} → {routeResult.alternative_route.road_dna} · {routeResult.time_saved}
+                </Text>
+              </View>
+
+              {/* Close button */}
+              <Pressable
+                style={({ pressed }) => [styles.detailsBtn, { marginTop: 4 }, pressed && styles.pressed]}
+                onPress={() => setShowDetails(false)}
+              >
+                <Text style={styles.detailsBtnText}>← Back to Map</Text>
+              </Pressable>
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        </Modal>
+      )}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  content: { padding: Spacing.four, gap: Spacing.four },
+  container: { flex: 1, backgroundColor: '#f8fafc', paddingTop: NAV_HEIGHT },
+  content: { padding: Spacing.four, gap: Spacing.four, maxWidth: 800, width: '100%', alignSelf: 'center' as const },
   header: { gap: Spacing.one },
 
   legend: {
@@ -462,4 +581,214 @@ const styles = StyleSheet.create({
   },
   logicTitle: { fontWeight: '800', fontSize: 13, color: '#0369a1' },
   logicText: { color: '#0c4a6e', fontSize: 12, lineHeight: 18 },
+
+  // View Route Details button
+  detailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0f172a',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: Spacing.four,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  detailsBtnText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  detailsBtnArrow: {
+    color: '#38bdf8',
+    fontWeight: '900',
+    fontSize: 18,
+  },
+
+  // ── Modal styles ─────────────────────────────────────────────────────────
+  modalRoot: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+    letterSpacing: -0.3,
+  },
+  modalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    padding: Spacing.four,
+    gap: Spacing.four,
+  },
+  modalRoute: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0369a1',
+    backgroundColor: '#f0f9ff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+
+  // Detail reason card
+  detailReasonCard: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 16,
+    padding: Spacing.four,
+    gap: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284c7',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  detailReasonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  detailReasonTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0369a1',
+    flex: 1,
+  },
+  savedChip: {
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  savedChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  detailReasonBody: {
+    fontSize: 13,
+    color: '#0c4a6e',
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  delayAlert: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: '#fef2f2',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  delayAlertText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#991b1b',
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+
+  // Detail route cards
+  detailRouteCard: {
+    borderRadius: 18,
+    padding: Spacing.four,
+    gap: 12,
+    borderWidth: 1.5,
+  },
+  detailCardRed: {
+    backgroundColor: '#fff5f5',
+    borderColor: '#fca5a5',
+  },
+  detailCardGreen: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#86efac',
+  },
+  detailCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  detailRiskBadge: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  detailRiskText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  detailCardLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  detailRouteName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+    lineHeight: 18,
+  },
+  detailMetricsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    justifyContent: 'space-around',
+  },
+  detailMetric: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  detailMetricLabel: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  detailMetricValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  detailSavings: {
+    fontSize: 12,
+    color: '#15803d',
+    fontWeight: '700',
+    backgroundColor: '#dcfce7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
 });

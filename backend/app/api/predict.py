@@ -5,7 +5,7 @@ from app.schemas.prediction import TrafficPredictionRequest, TrafficPredictionRe
 from app.services.prediction_service import TrafficPredictionService
 
 
-router = APIRouter(prefix="/api", tags=["prediction"])
+router = APIRouter(tags=["prediction"])
 
 
 @router.post(

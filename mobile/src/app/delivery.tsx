@@ -4,7 +4,8 @@ import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { NAV_HEIGHT } from '@/constants/theme';
 import { calculateRoute, type RouteResponse } from '@/services/api';
 
 export default function DeliveryScreen() {
@@ -178,10 +179,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+    paddingTop: NAV_HEIGHT,
   },
   content: {
     padding: Spacing.four,
     gap: Spacing.four,
+    maxWidth: 800,
+    width: '100%',
+    alignSelf: 'center' as const,
   },
   header: {
     flexDirection: 'row',

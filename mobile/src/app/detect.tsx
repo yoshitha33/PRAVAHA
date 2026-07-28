@@ -14,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Spacing } from '@/constants/theme';
+import { NAV_HEIGHT } from '@/constants/theme';
 import { runYoloDetection, type DetectionResponse } from '@/services/api';
 
 // ─── Severity config ──────────────────────────────────────────────────────────
@@ -100,14 +101,16 @@ function VehicleRow({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function TrafficDetectionScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [isVideo, setIsVideo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DetectionResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [inferenceMs, setInferenceMs] = useState<number | null>(null);
 
   // ── Shared upload handler ────────────────────────────────────────────────
-  async function uploadAndDetect(uri: string, mimeType: string, filename: string) {
+  async function uploadAndDetect(uri: string, mimeType: string, filename: string, video: boolean) {
     setImageUri(uri);
+    setIsVideo(video);
     setResult(null);
     setErrorMsg(null);
     setInferenceMs(null);
@@ -132,46 +135,71 @@ export default function TrafficDetectionScreen() {
     }
   }
 
-  // ── Gallery picker ───────────────────────────────────────────────────────
+  // ── Gallery picker — images AND videos ──────────────────────────────────
   async function pickFromGallery() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow access to your photo library to upload traffic images.');
+      Alert.alert('Permission needed', 'Allow access to your photo library to upload traffic images or videos.');
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ['images', 'videos'],
       quality: 0.85,
+      videoMaxDuration: 60, // cap at 60s to keep upload size sane
     });
     if (!picked.canceled && picked.assets[0]) {
       const asset = picked.assets[0];
-      const mime = asset.mimeType ?? 'image/jpeg';
-      const ext = mime.split('/')[1] ?? 'jpg';
-      await uploadAndDetect(asset.uri, mime, `traffic.${ext}`);
+      const isVid = asset.type === 'video';
+      const mime = asset.mimeType ?? (isVid ? 'video/mp4' : 'image/jpeg');
+      const ext  = isVid ? (mime.split('/')[1] ?? 'mp4') : (mime.split('/')[1] ?? 'jpg');
+      await uploadAndDetect(asset.uri, mime, `traffic.${ext}`, isVid);
     }
   }
 
-  // ── Camera picker ────────────────────────────────────────────────────────
+  // ── Camera picker — photo or video ───────────────────────────────────────
   async function pickFromCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow camera access to capture traffic images.');
+      Alert.alert('Permission needed', 'Allow camera access to capture traffic images or record video.');
       return;
     }
-    const picked = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
-    });
-    if (!picked.canceled && picked.assets[0]) {
-      const asset = picked.assets[0];
-      const mime = asset.mimeType ?? 'image/jpeg';
-      const ext = mime.split('/')[1] ?? 'jpg';
-      await uploadAndDetect(asset.uri, mime, `traffic.${ext}`);
-    }
+    Alert.alert(
+      'Capture Mode',
+      'Choose what to capture:',
+      [
+        {
+          text: '📷 Photo',
+          onPress: async () => {
+            const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 });
+            if (!picked.canceled && picked.assets[0]) {
+              const asset = picked.assets[0];
+              const mime = asset.mimeType ?? 'image/jpeg';
+              await uploadAndDetect(asset.uri, mime, `traffic.${mime.split('/')[1] ?? 'jpg'}`, false);
+            }
+          },
+        },
+        {
+          text: '🎥 Video',
+          onPress: async () => {
+            const picked = await ImagePicker.launchCameraAsync({
+              mediaTypes: ['videos'],
+              videoMaxDuration: 30,
+            });
+            if (!picked.canceled && picked.assets[0]) {
+              const asset = picked.assets[0];
+              const mime = asset.mimeType ?? 'video/mp4';
+              await uploadAndDetect(asset.uri, mime, `traffic.${mime.split('/')[1] ?? 'mp4'}`, true);
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
   }
 
   function reset() {
     setImageUri(null);
+    setIsVideo(false);
     setResult(null);
     setErrorMsg(null);
     setInferenceMs(null);
@@ -192,7 +220,7 @@ export default function TrafficDetectionScreen() {
           <Text style={s.title}>Traffic Detection</Text>
         </View>
         <Text style={s.subtitle}>
-          Snap or upload a traffic photo — YOLOv8 counts every vehicle and rates severity in seconds.
+          Snap a photo or record a video — YOLOv8 counts every vehicle and rates severity in seconds.
         </Text>
       </View>
 
@@ -200,11 +228,11 @@ export default function TrafficDetectionScreen() {
       <View style={s.uploadCard}>
         <View style={s.uploadCardHeader}>
           <Ionicons name="cloud-upload-outline" size={18} color="#0f172a" />
-          <Text style={s.uploadCardTitle}>Upload Traffic Image</Text>
+          <Text style={s.uploadCardTitle}>Upload Traffic Image or Video</Text>
         </View>
 
         <View style={s.uploadBtnRow}>
-          {/* Camera */}
+          {/* Camera — photo or video chooser */}
           <Pressable
             style={({ pressed }) => [s.uploadBtn, s.uploadBtnCamera, pressed && s.pressed]}
             onPress={pickFromCamera}
@@ -214,7 +242,7 @@ export default function TrafficDetectionScreen() {
             <Text style={s.uploadBtnText}>Camera</Text>
           </Pressable>
 
-          {/* Gallery */}
+          {/* Gallery — images + videos */}
           <Pressable
             style={({ pressed }) => [s.uploadBtn, s.uploadBtnGallery, pressed && s.pressed]}
             onPress={pickFromGallery}
@@ -225,8 +253,19 @@ export default function TrafficDetectionScreen() {
           </Pressable>
         </View>
 
+        {/* Format chips */}
+        <View style={s.formatChips}>
+          <View style={s.formatChip}>
+            <Ionicons name="image-outline" size={12} color="#0284c7" />
+            <Text style={s.formatChipText}>JPEG · PNG · WEBP</Text>
+          </View>
+          <View style={[s.formatChip, { backgroundColor: '#f5f3ff', borderColor: '#ddd6fe' }]}>
+            <Ionicons name="videocam-outline" size={12} color="#7c3aed" />
+            <Text style={[s.formatChipText, { color: '#7c3aed' }]}>MP4 · MOV · AVI · MKV</Text>
+          </View>
+        </View>
         <Text style={s.uploadHint}>
-          Supports JPEG · PNG · WEBP — max confidence at 640 × 640 px
+          Videos sampled at 2 fps · max 120 frames · max 60s
         </Text>
       </View>
 
@@ -234,26 +273,42 @@ export default function TrafficDetectionScreen() {
       {imageUri ? (
         <View style={s.previewCard}>
           <View style={s.previewHeader}>
-            <Text style={s.previewTitle}>Selected Image</Text>
+            <View style={s.previewTitleRow}>
+              <Ionicons
+                name={isVideo ? 'videocam-outline' : 'image-outline'}
+                size={16}
+                color={isVideo ? '#7c3aed' : '#0f172a'}
+              />
+              <Text style={s.previewTitle}>{isVideo ? 'Selected Video' : 'Selected Image'}</Text>
+              {isVideo && (
+                <View style={s.videoBadge}>
+                  <Text style={s.videoBadgeText}>VIDEO</Text>
+                </View>
+              )}
+            </View>
             {!loading && (
               <Pressable onPress={reset} hitSlop={8}>
                 <Ionicons name="close-circle-outline" size={22} color="#64748b" />
               </Pressable>
             )}
           </View>
-          <Image
-            source={{ uri: imageUri }}
-            style={s.previewImage}
-            resizeMode="cover"
-          />
+          {/* Show thumbnail for images; show video placeholder for videos */}
+          {isVideo ? (
+            <View style={s.videoPlaceholder}>
+              <Ionicons name="play-circle-outline" size={56} color="#7c3aed" />
+              <Text style={s.videoPlaceholderText}>Video ready for analysis</Text>
+              <Text style={s.videoPlaceholderSub}>YOLOv8 will sample 2 frames/sec · up to 120 frames</Text>
+            </View>
+          ) : (
+            <Image source={{ uri: imageUri }} style={s.previewImage} resizeMode="cover" />
+          )}
         </View>
       ) : (
-        // Empty state placeholder
         <View style={s.emptyState}>
-          <Ionicons name="image-outline" size={52} color="#cbd5e1" />
-          <Text style={s.emptyStateText}>No image selected</Text>
+          <Ionicons name="camera-outline" size={52} color="#cbd5e1" />
+          <Text style={s.emptyStateText}>No file selected</Text>
           <Text style={s.emptyStateSub}>
-            Use Camera or Gallery above to pick a traffic photo
+            Use Camera (photo/video) or Gallery to pick a traffic image or video
           </Text>
         </View>
       )}
@@ -262,9 +317,13 @@ export default function TrafficDetectionScreen() {
       {loading && (
         <View style={s.loadingCard}>
           <ActivityIndicator size="large" color="#0284c7" />
-          <Text style={s.loadingTitle}>Analyzing with YOLOv8…</Text>
+          <Text style={s.loadingTitle}>
+            {isVideo ? 'Analyzing Video with YOLOv8…' : 'Analyzing with YOLOv8…'}
+          </Text>
           <Text style={s.loadingSteps}>
-            Detecting vehicles · Counting objects · Scoring severity
+            {isVideo
+              ? 'Sampling frames · Detecting vehicles · Aggregating counts'
+              : 'Detecting vehicles · Counting objects · Scoring severity'}
           </Text>
         </View>
       )}
@@ -358,8 +417,10 @@ export default function TrafficDetectionScreen() {
               <Text style={s.metaChipText}>YOLOv8n · COCO</Text>
             </View>
             <View style={s.metaChip}>
-              <Ionicons name="image-outline" size={13} color="#0284c7" />
-              <Text style={s.metaChipText}>{result.source_type}</Text>
+              <Ionicons name={result.source_type === 'video' ? 'videocam-outline' : 'image-outline'} size={13} color={result.source_type === 'video' ? '#7c3aed' : '#0284c7'} />
+              <Text style={[s.metaChipText, result.source_type === 'video' && { color: '#7c3aed' }]}>
+                {result.source_type}
+              </Text>
             </View>
           </View>
 
@@ -369,7 +430,7 @@ export default function TrafficDetectionScreen() {
             onPress={reset}
           >
             <Ionicons name="refresh-outline" size={18} color="#ffffff" />
-            <Text style={s.scanAgainText}>Scan Another Image</Text>
+            <Text style={s.scanAgainText}>Scan Another Image or Video</Text>
           </Pressable>
         </View>
       )}
@@ -384,10 +445,14 @@ const s = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#f8fafc',
+    paddingTop: NAV_HEIGHT,
   },
   content: {
     padding: Spacing.four,
     gap: Spacing.four,
+    maxWidth: 800,
+    width: '100%',
+    alignSelf: 'center' as const,
   },
 
   // Header
@@ -430,6 +495,13 @@ const s = StyleSheet.create({
   },
   uploadBtnText: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
   uploadHint: { fontSize: 11, color: '#94a3b8', textAlign: 'center' },
+  formatChips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  formatChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#f0f9ff', paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 10, borderWidth: 1, borderColor: '#bae6fd',
+  },
+  formatChipText: { fontSize: 11, fontWeight: '700', color: '#0284c7' },
   pressed: { opacity: 0.75 },
 
   // Preview
@@ -447,8 +519,21 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingVertical: 12,
   },
+  previewTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   previewTitle: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  videoBadge: {
+    backgroundColor: '#ede9fe', paddingHorizontal: 7, paddingVertical: 2,
+    borderRadius: 6,
+  },
+  videoBadgeText: { fontSize: 10, fontWeight: '900', color: '#7c3aed', letterSpacing: 0.5 },
   previewImage: { width: '100%', height: 220, backgroundColor: '#0f172a' },
+  videoPlaceholder: {
+    height: 180, backgroundColor: '#faf5ff',
+    justifyContent: 'center', alignItems: 'center', gap: 8,
+    borderTopWidth: 1, borderTopColor: '#ede9fe',
+  },
+  videoPlaceholderText: { fontSize: 15, fontWeight: '800', color: '#7c3aed' },
+  videoPlaceholderSub:  { fontSize: 11, color: '#a78bfa', textAlign: 'center', paddingHorizontal: 24 },
 
   // Empty state
   emptyState: {

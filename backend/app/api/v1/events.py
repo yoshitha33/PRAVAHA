@@ -75,6 +75,7 @@ async def get_live_events() -> list[EventAlert]:
                 id="live-rush-hour",
                 title="🚨 Live Bangalore Rush Hour Peak Traffic",
                 location="Silk Board & Outer Ring Road (ORR)",
+                type="congestion",
                 detail="Peak office commute in progress. High density on Bellandur to Marathahalli corridor. Road DNA: 86. Reroute via HAL Old Airport Rd.",
                 timestamp=f"Peak Hour Active ({timestamp_str})",
             )

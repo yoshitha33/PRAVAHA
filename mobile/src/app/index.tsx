@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { NAV_HEIGHT } from '@/constants/theme';
 import { useHomeMap } from '@/hooks/use-home-map';
-import { getLiveWeather, fetchAlerts, type AlertItem } from '@/services/api';
+import { getLiveWeather, fetchAlerts, getRoadStatus, predictFromRoadStatus, type AlertItem } from '@/services/api';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -17,67 +18,73 @@ export default function HomeScreen() {
   const [userRealCity, setUserRealCity] = useState<string | null>(null);
   const [temperature, setTemperature] = useState('28°C');
   const [weatherDesc, setWeatherDesc] = useState('Light Rain');
-  const [congestionLevel, setCongestionLevel] = useState('Medium Congestion');
+  const [congestionLevel, setCongestionLevel] = useState<'Low' | 'Medium' | 'High'>('Medium');
   const [roadDnaScore, setRoadDnaScore] = useState(67);
+  const [mlCongestion, setMlCongestion] = useState<string | null>(null);
+  const [mlConfidence, setMlConfidence] = useState<number | null>(null);
   const [latestAlert, setLatestAlert] = useState<string | null>(null);
   const [isLiveLoaded, setIsLiveLoaded] = useState(false);
+  const dnaAnim = useRef(new Animated.Value(0)).current;
+
+  function animateDna(score: number) {
+    Animated.timing(dnaAnim, { toValue: score, duration: 1200, useNativeDriver: false }).start();
+  }
 
   useEffect(() => {
     async function loadData() {
       try {
-        // Fetch GPS coordinates and geocode real city location
+        // Geocode real city — use Location.reverseGeocodeAsync only on native
+        // (removed from Expo web / SDK 49+). On web we just show a Bangalore label.
         if (homeMap.currentLocation) {
           try {
-            const geocode = await Location.reverseGeocodeAsync({
-              latitude: homeMap.currentLocation.latitude,
-              longitude: homeMap.currentLocation.longitude,
-            });
-            if (geocode && geocode.length > 0) {
-              const place = geocode[0];
-              const realCity = place.city || place.district || place.subregion || place.name;
-              if (realCity) {
-                setUserRealCity(realCity);
-              }
+            // reverseGeocodeAsync is available on native (iOS/Android) only
+            if (typeof navigator !== 'undefined' && navigator.product !== 'ReactNative') {
+              // Web: skip geocode, use static label
+              setUserRealCity('Bengaluru');
+            } else {
+              const geo = await Location.reverseGeocodeAsync(homeMap.currentLocation);
+              const place = geo[0];
+              const city = place?.city || place?.district || place?.subregion || place?.name;
+              if (city) setUserRealCity(city);
             }
-          } catch {
-            // Geocode fallback
-          }
+          } catch { setUserRealCity('Bengaluru'); }
         }
 
-        // Always query live weather for Bangalore problem statement
+        // Live weather for Bangalore
         const weather = await getLiveWeather({ city: 'Bengaluru' });
-        if (weather && weather.temperature) {
+        if (weather?.temperature) {
           setTemperature(`${Math.round(weather.temperature)}°C`);
-          if (weather.conditions && weather.conditions[0]) {
+          if (weather.conditions?.[0]) {
             setWeatherDesc(weather.conditions[0].description || weather.conditions[0].main);
           }
-
-          const isRaining = weather.conditions?.some((c) =>
-            c.main.toLowerCase().includes('rain')
-          );
-
-          if (isRaining) {
-            setRoadDnaScore(78);
-            setCongestionLevel('High Congestion');
-          } else {
-            setRoadDnaScore(67);
-            setCongestionLevel('Medium Congestion');
-          }
-          setIsLiveLoaded(true);
         }
 
-        // Fetch live alert ticker
+        // Live Road DNA from backend (real computation, not hardcoded)
+        const roadStatus = await getRoadStatus({ latitude: 12.9562, longitude: 77.7011 });
+        setRoadDnaScore(roadStatus.road_dna);
+        setCongestionLevel(roadStatus.congestion as 'Low' | 'Medium' | 'High');
+        animateDna(roadStatus.road_dna);
+        setIsLiveLoaded(true);
+
+        // ML Model prediction derived from live road status
+        const mlResult = await predictFromRoadStatus(roadStatus, 'Marathahalli Corridor');
+        setMlCongestion(mlResult.congestionClass);
+        setMlConfidence(Math.round(mlResult.confidence * 100));
+
+        // Alert ticker
         const alertsList = await fetchAlerts();
-        if (alertsList && alertsList.length > 0) {
-          setLatestAlert(alertsList[0].title);
-        }
+        if (alertsList?.length > 0) setLatestAlert(alertsList[0].title);
       } catch (err) {
-        console.log('Error initializing home dashboard:', err);
+        console.log('Home dashboard init error:', err);
       }
     }
-
     loadData();
   }, [homeMap.currentLocation]);
+
+  const dnaBarWidth = dnaAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] });
+  const dnaColor    = roadDnaScore > 70 ? '#ef4444' : roadDnaScore > 45 ? '#f59e0b' : '#10b981';
+  const congBgColor = congestionLevel === 'High' ? '#dc2626' : congestionLevel === 'Medium' ? '#d97706' : '#059669';
+  const mlBgColor   = mlCongestion === 'High' ? '#7c3aed' : mlCongestion === 'Medium' ? '#2563eb' : '#059669';
 
   return (
     <ThemedView style={styles.container}>
@@ -133,22 +140,17 @@ export default function HomeScreen() {
 
             <View style={styles.metricItem}>
               <ThemedText type="smallBold" style={styles.metricLabel}>
-                🚦 Traffic Prediction
+                🚦 Road DNA Congestion
               </ThemedText>
-              <View
-                style={[
-                  styles.congestionTag,
-                  { backgroundColor: roadDnaScore > 70 ? '#dc2626' : '#d97706' },
-                ]}
-              >
+              <View style={[styles.congestionTag, { backgroundColor: congBgColor }]}>
                 <ThemedText style={styles.congestionText}>
-                  {congestionLevel}
+                  {congestionLevel} Traffic
                 </ThemedText>
               </View>
             </View>
           </View>
 
-          {/* Road DNA Score Bar */}
+          {/* Road DNA Score Bar — animated, live from backend */}
           <View style={styles.roadDnaSection}>
             <View style={styles.dnaHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -161,24 +163,29 @@ export default function HomeScreen() {
                 {roadDnaScore} <ThemedText style={styles.dnaMax}>/ 100</ThemedText>
               </ThemedText>
             </View>
-
             <View style={styles.dnaBarTrack}>
-              <View
-                style={[
-                  styles.dnaBarFill,
-                  {
-                    width: `${roadDnaScore}%`,
-                    backgroundColor: roadDnaScore > 70 ? '#ef4444' : '#f59e0b',
-                  },
-                ]}
-              />
+              <Animated.View style={[styles.dnaBarFill, { width: dnaBarWidth, backgroundColor: dnaColor }]} />
             </View>
             <ThemedText type="small" style={styles.dnaSubtext}>
               {isLiveLoaded
-                ? '✓ Real-time OpenWeather API & Scikit-Learn predictions synced.'
-                : 'Connecting to Bangalore traffic models...'}
+                ? '✓ Live from /api/v1/road-status · Marathahalli Corridor'
+                : 'Connecting to Road DNA engine…'}
             </ThemedText>
           </View>
+
+          {/* ML Model Badge */}
+          {mlCongestion && (
+            <View style={styles.mlBadgeRow}>
+              <View style={[styles.mlTag, { backgroundColor: mlBgColor }]}>
+                <ThemedText style={styles.mlTagText}>
+                  🤖 sklearn ML: {mlCongestion} · {mlConfidence}% conf
+                </ThemedText>
+              </View>
+              <ThemedText type="small" style={styles.mlTagSub}>
+                Random Forest · traffic_model.pkl
+              </ThemedText>
+            </View>
+          )}
         </View>
 
         {/* Live Alerts Marquee Ticker */}
@@ -283,10 +290,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+    paddingTop: NAV_HEIGHT,
   },
   content: {
     padding: Spacing.four,
     gap: Spacing.four,
+    maxWidth: 800,
+    width: '100%',
+    alignSelf: 'center' as const,
   },
   topHeader: {
     flexDirection: 'row',
@@ -445,6 +456,25 @@ const styles = StyleSheet.create({
   },
   dnaSubtext: {
     color: '#64748b',
+    fontSize: 11,
+  },
+  mlBadgeRow: {
+    gap: 4,
+    marginTop: 4,
+  },
+  mlTag: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  mlTagText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mlTagSub: {
+    color: '#475569',
     fontSize: 11,
   },
   tickerContainer: {

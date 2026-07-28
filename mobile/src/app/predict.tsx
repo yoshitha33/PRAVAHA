@@ -2,28 +2,40 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   View,
-  Text,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { getRoadStatus, type RoadStatusResponse } from '@/services/api';
 import { Spacing } from '@/constants/theme';
+import { NAV_HEIGHT } from '@/constants/theme';
+import {
+  getRoadStatus,
+  predictFromRoadStatus,
+  type PredictionResponse,
+  type RoadStatusResponse,
+} from '@/services/api';
 
-// ── Color maps ───────────────────────────────────────────────────────────────
-const C_COLOR: Record<string, string> = { Low: '#10b981', Medium: '#f59e0b', High: '#ef4444' };
-const C_BG: Record<string, string>    = { Low: '#ecfdf5', Medium: '#fffbeb', High: '#fef2f2' };
-const C_BORDER: Record<string, string>= { Low: '#a7f3d0', Medium: '#fde68a', High: '#fca5a5' };
-const C_ICON: Record<string, string>  = { Low: 'checkmark-circle-outline', Medium: 'alert-circle-outline', High: 'warning-outline' };
+// ── Color maps ────────────────────────────────────────────────────────────────
+const C_COLOR:  Record<string, string> = { Low: '#10b981', Medium: '#f59e0b', High: '#ef4444' };
+const C_BG:     Record<string, string> = { Low: '#ecfdf5', Medium: '#fffbeb', High: '#fef2f2' };
+const C_BORDER: Record<string, string> = { Low: '#a7f3d0', Medium: '#fde68a', High: '#fca5a5' };
+const C_ICON:   Record<string, string> = {
+  Low: 'checkmark-circle-outline',
+  Medium: 'alert-circle-outline',
+  High: 'warning-outline',
+};
+const ML_COLOR: Record<string, string> = { Low: '#10b981', Medium: '#f59e0b', High: '#ef4444' };
+const ML_BG:    Record<string, string> = { Low: '#ecfdf5', Medium: '#fffbeb', High: '#fef2f2' };
 
-// ── Animated DNA progress bar ────────────────────────────────────────────────
+// ── Animated DNA bar ──────────────────────────────────────────────────────────
 function DnaBar({ score, color }: { score: number; color: string }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -37,7 +49,7 @@ function DnaBar({ score, color }: { score: number; color: string }) {
   );
 }
 
-// ── Pulsing live indicator dot ───────────────────────────────────────────────
+// ── Pulsing dot ───────────────────────────────────────────────────────────────
 function PulseDot({ color }: { color: string }) {
   const p = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -51,10 +63,10 @@ function PulseDot({ color }: { color: string }) {
   return <Animated.View style={[s.pulseDot, { backgroundColor: color, transform: [{ scale: p }] }]} />;
 }
 
-// ── Speed comparison widget ──────────────────────────────────────────────────
-function SpeedComparison({ speed, freeFlow }: { speed: number; freeFlow: number }) {
+// ── Speed comparison ──────────────────────────────────────────────────────────
+function SpeedBar({ speed, freeFlow }: { speed: number; freeFlow: number }) {
   const color = speed >= freeFlow * 0.7 ? '#10b981' : speed >= freeFlow * 0.4 ? '#f59e0b' : '#ef4444';
-  const pct = Math.min((speed / Math.max(freeFlow, 1)) * 100, 100);
+  const pct   = Math.min((speed / Math.max(freeFlow, 1)) * 100, 100);
   return (
     <View style={s.speedBox}>
       <View style={s.speedRowTop}>
@@ -65,26 +77,103 @@ function SpeedComparison({ speed, freeFlow }: { speed: number; freeFlow: number 
         <Text style={s.speedUnit}> free-flow</Text>
       </View>
       <View style={s.barTrack}>
-        <View style={[s.barFill, { width: `${pct}%`, backgroundColor: color }]} />
+        <View style={[s.barFill, { width: `${pct}%` as any, backgroundColor: color }]} />
       </View>
+    </View>
+  );
+}
+
+// ── ML Prediction Panel ───────────────────────────────────────────────────────
+function MlPanel({ ml, loading }: { ml: PredictionResponse | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <View style={s.mlCard}>
+        <View style={s.mlHeader}>
+          <Ionicons name="hardware-chip-outline" size={18} color="#7c3aed" />
+          <Text style={s.mlTitle}>Scikit-Learn ML Prediction</Text>
+          <View style={s.mlBadge}><Text style={s.mlBadgeText}>sklearn</Text></View>
+        </View>
+        <View style={s.mlLoadRow}>
+          <ActivityIndicator size="small" color="#7c3aed" />
+          <Text style={s.mlLoadText}>Running Random Forest model…</Text>
+        </View>
+      </View>
+    );
+  }
+  if (!ml) return null;
+
+  const cls   = ml.congestionClass as 'Low' | 'Medium' | 'High';
+  const color = ML_COLOR[cls] ?? '#f59e0b';
+  const bg    = ML_BG[cls]    ?? '#fffbeb';
+  const conf  = Math.round(ml.confidence * 100);
+  const confColor = conf >= 80 ? '#10b981' : conf >= 60 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <View style={s.mlCard}>
+      <View style={s.mlHeader}>
+        <Ionicons name="hardware-chip-outline" size={18} color="#7c3aed" />
+        <Text style={s.mlTitle}>Scikit-Learn ML Prediction</Text>
+        <View style={s.mlBadge}><Text style={s.mlBadgeText}>sklearn</Text></View>
+      </View>
+
+      {/* Result row */}
+      <View style={s.mlResultRow}>
+        <View style={[s.mlResultPill, { backgroundColor: bg }]}>
+          <Ionicons
+            name={cls === 'High' ? 'warning' : cls === 'Medium' ? 'alert-circle' : 'checkmark-circle'}
+            size={20}
+            color={color}
+          />
+          <Text style={[s.mlResultText, { color }]}>{cls} Congestion</Text>
+        </View>
+
+        <View style={s.mlConfBlock}>
+          <Text style={[s.mlConfNum, { color: confColor }]}>{conf}%</Text>
+          <Text style={s.mlConfLabel}>Confidence</Text>
+        </View>
+      </View>
+
+      {/* Confidence bar */}
+      <View style={s.mlConfBarTrack}>
+        <View style={[s.mlConfBarFill, { width: `${conf}%` as any, backgroundColor: confColor }]} />
+      </View>
+
+      {/* Model info row */}
+      <View style={s.mlInfoRow}>
+        <View style={s.mlInfoChip}>
+          <Ionicons name="git-branch-outline" size={12} color="#7c3aed" />
+          <Text style={s.mlInfoChipText}>Random Forest Classifier</Text>
+        </View>
+        <View style={s.mlInfoChip}>
+          <Ionicons name="layers-outline" size={12} color="#7c3aed" />
+          <Text style={s.mlInfoChipText}>15-feature input</Text>
+        </View>
+        <View style={s.mlInfoChip}>
+          <Ionicons name="checkmark-done-outline" size={12} color="#7c3aed" />
+          <Text style={s.mlInfoChipText}>traffic_model.pkl</Text>
+        </View>
+      </View>
+
+      <Text style={s.mlNote}>
+        Model trained on Bangalore traffic dataset · Features derived from live Road DNA signals
+      </Text>
     </View>
   );
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function RoadStatusScreen() {
-  const [status, setStatus]       = useState<RoadStatusResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [status,      setStatus]      = useState<RoadStatusResponse | null>(null);
+  const [ml,          setMl]          = useState<PredictionResponse | null>(null);
+  const [isLoading,   setIsLoading]   = useState(true);
+  const [mlLoading,   setMlLoading]   = useState(false);
   const [lastUpdated, setLastUpdated] = useState('');
-  const [error, setError]         = useState<string | null>(null);
-  const [searchText, setSearchText] = useState('');
+  const [error,       setError]       = useState<string | null>(null);
+  const [searchText,  setSearchText]  = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  // Current GPS for auto-fetch
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ── Get GPS once on mount ────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -93,73 +182,23 @@ export default function RoadStatusScreen() {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setGpsCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
         } else {
-          fetchStatusForCoords(16.5449, 81.5212); // Default to Bhimavaram
+          fetchStatusForCoords(12.9716, 77.5946);
         }
       } catch {
-        fetchStatusForCoords(16.5449, 81.5212); // Bhimavaram fallback
+        fetchStatusForCoords(12.9716, 77.5946);
       }
     })();
   }, []);
 
-  // ── Auto-fetch when GPS is ready ─────────────────────────────────────────
-  useEffect(() => {
-    if (gpsCoords) fetchStatus();
-  }, [gpsCoords]);
+  useEffect(() => { if (gpsCoords) fetchStatus(); }, [gpsCoords]);
 
-  async function fetchStatusForCoords(lat: number, lng: number) {
-    setIsLoading(true);
-    setError(null);
-    setSearchText('');
+  async function runMlPrediction(roadStatus: RoadStatusResponse) {
+    setMlLoading(true);
     try {
-      const data = await getRoadStatus({ latitude: lat, longitude: lng });
-      showResult(data);
-    } catch {
-      setError('Unable to fetch road status. Please try again.');
+      const result = await predictFromRoadStatus(roadStatus);
+      setMl(result);
     } finally {
-      setIsLoading(false);
-    }
-  }
-
-  // ── Fetch by GPS ─────────────────────────────────────────────────────────
-  async function fetchStatus() {
-    if (gpsCoords) {
-      fetchStatusForCoords(gpsCoords.lat, gpsCoords.lng);
-    } else {
-      setIsLoading(true);
-      setError(null);
-      setSearchText('');
-      try {
-        const perm = await Location.requestForegroundPermissionsAsync();
-        if (perm.status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          setGpsCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-          fetchStatusForCoords(loc.coords.latitude, loc.coords.longitude);
-        } else {
-          const data = await getRoadStatus({ place_name: 'Bhimavaram' });
-          showResult(data);
-        }
-      } catch {
-        const data = await getRoadStatus({});
-        showResult(data);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }
-
-  // ── Fetch by user-typed place name ────────────────────────────────────────
-  async function searchPlace(placeOverride?: string) {
-    const target = placeOverride || searchText.trim();
-    if (!target) return;
-    setIsSearching(true);
-    setError(null);
-    try {
-      const data = await getRoadStatus({ place_name: target });
-      showResult(data);
-    } catch {
-      setError(`Could not find DNA score for "${target}". Try a more specific location.`);
-    } finally {
-      setIsSearching(false);
+      setMlLoading(false);
     }
   }
 
@@ -168,26 +207,59 @@ export default function RoadStatusScreen() {
     setLastUpdated(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
     fadeAnim.setValue(0);
     Animated.timing(fadeAnim, { toValue: 1, duration: 550, useNativeDriver: true }).start();
+    runMlPrediction(data);
   }
 
-  const cColor  = status ? C_COLOR[status.congestion]  ?? '#f59e0b' : '#f59e0b';
-  const cBg     = status ? C_BG[status.congestion]     ?? '#fffbeb' : '#fffbeb';
-  const cBorder = status ? C_BORDER[status.congestion] ?? '#fde68a' : '#fde68a';
+  async function fetchStatusForCoords(lat: number, lng: number) {
+    setIsLoading(true); setError(null); setSearchText('');
+    try { showResult(await getRoadStatus({ latitude: lat, longitude: lng })); }
+    catch { setError('Unable to fetch road status. Please try again.'); }
+    finally { setIsLoading(false); }
+  }
+
+  async function fetchStatus() {
+    if (gpsCoords) { fetchStatusForCoords(gpsCoords.lat, gpsCoords.lng); return; }
+    setIsLoading(true); setError(null);
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setGpsCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        fetchStatusForCoords(loc.coords.latitude, loc.coords.longitude);
+      } else {
+        showResult(await getRoadStatus({ place_name: 'Bengaluru' }));
+      }
+    } catch { showResult(await getRoadStatus({})); }
+    finally { setIsLoading(false); }
+  }
+
+  async function searchPlace(placeOverride?: string) {
+    const target = placeOverride || searchText.trim();
+    if (!target) return;
+    setIsSearching(true); setError(null);
+    try { showResult(await getRoadStatus({ place_name: target })); }
+    catch { setError(`Could not find DNA score for "${target}". Try a more specific location.`); }
+    finally { setIsSearching(false); }
+  }
+
+  const cColor   = status ? C_COLOR[status.congestion]  ?? '#f59e0b' : '#f59e0b';
+  const cBg      = status ? C_BG[status.congestion]     ?? '#fffbeb' : '#fffbeb';
+  const cBorder  = status ? C_BORDER[status.congestion] ?? '#fde68a' : '#fde68a';
   const cIconName = status ? C_ICON[status.congestion] ?? 'alert-circle-outline' : 'alert-circle-outline';
-  const dna     = status?.road_dna ?? 0;
+  const dna      = status?.road_dna ?? 0;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
-        {/* ── Header Bar ── */}
+        {/* Header */}
         <View style={s.header}>
           <View>
             <View style={s.headerTitleRow}>
               <Ionicons name="speedometer-outline" size={24} color="#0284c7" />
               <Text style={s.title}>Road Status</Text>
             </View>
-            <Text style={s.subtitle}>Real-Time Road DNA & Congestion Engine</Text>
+            <Text style={s.subtitle}>Road DNA · ML Congestion Engine · Live Speed</Text>
           </View>
           {lastUpdated ? (
             <View style={s.liveBadge}>
@@ -197,7 +269,7 @@ export default function RoadStatusScreen() {
           ) : null}
         </View>
 
-        {/* ── Search & Location Input Card ── */}
+        {/* Search Card */}
         <View style={s.searchCard}>
           <View style={s.searchCardHeader}>
             <Ionicons name="search-outline" size={18} color="#0284c7" />
@@ -208,7 +280,7 @@ export default function RoadStatusScreen() {
               <Ionicons name="location-outline" size={18} color="#94a3b8" style={s.inputIcon} />
               <TextInput
                 style={s.searchInput}
-                placeholder="Search Bhimavaram, Silk Board, Hyderabad…"
+                placeholder="Search Silk Board, Whitefield, Hyderabad…"
                 placeholderTextColor="#94a3b8"
                 value={searchText}
                 onChangeText={setSearchText}
@@ -216,55 +288,34 @@ export default function RoadStatusScreen() {
                 returnKeyType="search"
               />
             </View>
-            <Pressable
-              style={({ pressed }) => [s.searchBtn, pressed && s.pressed]}
-              onPress={() => searchPlace()}
-              disabled={isSearching}
-            >
-              {isSearching ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={s.searchBtnText}>Search</Text>
-              )}
+            <Pressable style={({ pressed }) => [s.searchBtn, pressed && s.pressed]} onPress={() => searchPlace()} disabled={isSearching}>
+              {isSearching ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.searchBtnText}>Go</Text>}
             </Pressable>
           </View>
-
-          {/* Quick Location Chips */}
           <View style={s.chipsWrapper}>
-            {['Bhimavaram', 'Silk Board', 'Whitefield', 'Hyderabad', 'Vizag'].map((place) => (
-              <Pressable
-                key={place}
-                style={({ pressed }) => [s.placeChip, pressed && s.pressed]}
-                onPress={() => {
-                  setSearchText(place);
-                  searchPlace(place);
-                }}
-              >
+            {['Silk Board', 'Whitefield', 'Hebbal', 'Marathahalli', 'Koramangala'].map((place) => (
+              <Pressable key={place} style={({ pressed }) => [s.placeChip, pressed && s.pressed]} onPress={() => { setSearchText(place); searchPlace(place); }}>
                 <Ionicons name="location-sharp" size={13} color="#0284c7" />
                 <Text style={s.placeChipText}>{place}</Text>
               </Pressable>
             ))}
           </View>
-
-          <Pressable
-            style={({ pressed }) => [s.myLocBtn, pressed && s.pressed]}
-            onPress={fetchStatus}
-          >
+          <Pressable style={({ pressed }) => [s.myLocBtn, pressed && s.pressed]} onPress={fetchStatus}>
             <Ionicons name="navigate-outline" size={16} color="#0284c7" />
             <Text style={s.myLocText}>Use Current GPS Location</Text>
           </Pressable>
         </View>
 
-        {/* ── Loading Card ── */}
+        {/* Loading */}
         {isLoading && !status && (
           <View style={s.loadingCard}>
             <ActivityIndicator size="large" color="#0284c7" />
             <Text style={s.loadingTitle}>Analyzing Road DNA & Traffic Parameters…</Text>
-            <Text style={s.loadingSteps}>GPS → OSM Nominatim → OSRM → Overpass → AI Model</Text>
+            <Text style={s.loadingSteps}>GPS → OSM → OSRM → Weather → ML Model</Text>
           </View>
         )}
 
-        {/* ── Error Card ── */}
+        {/* Error */}
         {error && !isLoading && !isSearching && (
           <View style={s.errorCard}>
             <Ionicons name="warning-outline" size={22} color="#dc2626" />
@@ -272,11 +323,11 @@ export default function RoadStatusScreen() {
           </View>
         )}
 
-        {/* ── Main Dashboard Results ── */}
+        {/* Results */}
         {status && (
           <Animated.View style={{ opacity: fadeAnim, gap: Spacing.four }}>
 
-            {/* Location Pill Header */}
+            {/* Location Pill */}
             <View style={s.locPill}>
               <View style={s.locPillIconBg}>
                 <Ionicons name="location" size={20} color="#0284c7" />
@@ -295,7 +346,7 @@ export default function RoadStatusScreen() {
               </View>
             </View>
 
-            {/* ── DNA Score Hero Card (Dark Glassmorphism) ── */}
+            {/* DNA Hero */}
             <View style={s.dnaHero}>
               <View style={s.dnaHeroTop}>
                 <View style={s.dnaHeroLeft}>
@@ -312,11 +363,7 @@ export default function RoadStatusScreen() {
                   <Text style={s.dnaScoreMax}>/100</Text>
                 </View>
               </View>
-
-              {/* Animated Progress Bar */}
               <DnaBar score={dna} color={cColor} />
-
-              {/* Status Message */}
               <View style={[s.dnaInterpret, { backgroundColor: cBg, borderColor: cBorder }]}>
                 <Ionicons name={cIconName as any} size={18} color={cColor} />
                 <Text style={[s.dnaInterpretText, { color: cColor }]}>
@@ -327,95 +374,82 @@ export default function RoadStatusScreen() {
                     : 'Optimal Road Health — Free-flowing traffic'}
                 </Text>
               </View>
-
-              {/* Time Context */}
               <View style={s.timeBadge}>
                 <Ionicons name="time-outline" size={14} color="#94a3b8" />
                 <Text style={s.timeBadgeText}>{status.time_of_day_label}</Text>
               </View>
             </View>
 
-            {/* ── Metrics Grid ── */}
-            <View style={s.metricsRow}>
+            {/* ML Prediction Panel */}
+            <MlPanel ml={ml} loading={mlLoading} />
 
-              {/* Speed Metric */}
+            {/* Metrics Grid */}
+            <View style={s.metricsRow}>
               <View style={s.metricCard}>
                 <View style={s.metricHeader}>
                   <Ionicons name="speedometer-outline" size={18} color="#0284c7" />
                   <Text style={s.metricLabel}>Speed Profile</Text>
                 </View>
-                <SpeedComparison speed={status.avg_speed_kmh} freeFlow={status.free_flow_speed_kmh} />
+                <SpeedBar speed={status.avg_speed_kmh} freeFlow={status.free_flow_speed_kmh} />
               </View>
-
-              {/* Weather Metric */}
               <View style={s.metricCard}>
                 <View style={s.metricHeader}>
                   <Ionicons name="partly-sunny-outline" size={18} color="#0284c7" />
                   <Text style={s.metricLabel}>Weather</Text>
                 </View>
                 <Text style={s.metricValue}>{status.weather_condition}</Text>
-                {status.temperature_c != null && (
-                  <Text style={s.metricSub}>{Math.round(status.temperature_c)}°C</Text>
-                )}
-                {status.humidity != null && (
-                  <Text style={s.metricSub}>{status.humidity}% RH</Text>
-                )}
+                {status.temperature_c != null && <Text style={s.metricSub}>{Math.round(status.temperature_c)}°C</Text>}
+                {status.humidity != null && <Text style={s.metricSub}>{status.humidity}% RH</Text>}
               </View>
-
-              {/* Confidence Metric */}
               <View style={s.metricCard}>
                 <View style={s.metricHeader}>
                   <Ionicons name="shield-checkmark-outline" size={18} color="#0284c7" />
                   <Text style={s.metricLabel}>Confidence</Text>
                 </View>
-                <Text style={[s.metricValue, { color: '#0284c7' }]}>
-                  {Math.round(status.confidence * 100)}%
-                </Text>
+                <Text style={[s.metricValue, { color: '#0284c7' }]}>{Math.round(status.confidence * 100)}%</Text>
                 <Text style={s.metricSub}>Multi-signal</Text>
               </View>
             </View>
 
-            {/* ── Congestion Reason Card ── */}
+            {/* Congestion Reason */}
             <View style={s.reasonCard}>
               <View style={s.reasonHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="analytics-outline" size={18} color="#0f172a" />
                   <Text style={s.reasonTitle}>AI Congestion Analysis</Text>
                 </View>
-                <Text style={s.reasonTag}>Multi-layer ML</Text>
+                <Text style={s.reasonTag}>Road DNA Engine</Text>
               </View>
               <Text style={s.reasonBody}>{status.congestion_reason}</Text>
             </View>
 
-            {/* ── Data Pipeline Stepper ── */}
+            {/* Pipeline Stepper */}
             <View style={s.pipelineCard}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 <Ionicons name="git-network-outline" size={18} color="#0f172a" />
                 <Text style={s.pipelineTitle}>Live Signal Pipeline</Text>
               </View>
-
               <View style={s.pipelineSteps}>
                 {[
-                  { icon: 'location-outline', label: 'GPS / Nominatim Geocode', value: status.area_name },
-                  { icon: 'map-outline', label: 'OSM Overpass Road Type', value: status.road_type },
-                  { icon: 'speedometer-outline', label: 'OSRM Speed Profile', value: `${status.avg_speed_kmh.toFixed(1)} km/h (free-flow: ${status.free_flow_speed_kmh} km/h)` },
-                  { icon: 'time-outline', label: 'Time-of-day Heuristics', value: status.time_of_day_label },
-                  { icon: 'pulse-outline', label: 'Road DNA Score Computed', value: `${dna}/100 → ${status.congestion}` },
+                  { icon: 'location-outline',   label: 'GPS / Nominatim Geocode',  value: status.area_name },
+                  { icon: 'map-outline',         label: 'OSM Overpass Road Type',   value: status.road_type },
+                  { icon: 'speedometer-outline', label: 'OSRM Speed Profile',       value: `${status.avg_speed_kmh.toFixed(1)} km/h (free-flow: ${status.free_flow_speed_kmh} km/h)` },
+                  { icon: 'time-outline',        label: 'Time-of-day Heuristics',   value: status.time_of_day_label },
+                  { icon: 'pulse-outline',       label: 'Road DNA Score Computed',  value: `${dna}/100 → ${status.congestion}` },
+                  { icon: 'hardware-chip-outline', label: 'sklearn ML Prediction',  value: ml ? `${ml.congestionClass} (${Math.round(ml.confidence * 100)}% conf)` : mlLoading ? 'Running…' : 'Pending' },
                 ].map((step, i) => (
                   <View key={i}>
                     <View style={s.pipelineStep}>
-                      <Ionicons name={step.icon as any} size={16} color="#0284c7" style={{ marginTop: 2 }} />
+                      <Ionicons name={step.icon as any} size={16} color={i === 5 ? '#7c3aed' : '#0284c7'} style={{ marginTop: 2 }} />
                       <View style={{ flex: 1 }}>
                         <Text style={s.pipeStepLabel}>{step.label}</Text>
-                        <Text style={s.pipeStepValue}>{step.value}</Text>
+                        <Text style={[s.pipeStepValue, i === 5 && { color: '#7c3aed' }]}>{step.value}</Text>
                       </View>
                     </View>
-                    {i < 4 && <View style={s.pipeLine} />}
+                    {i < 5 && <View style={s.pipeLine} />}
                   </View>
                 ))}
               </View>
-
-              {/* Data Sources Chips */}
               <View style={s.sourceChipsRow}>
                 {status.data_sources.map((src, i) => (
                   <View key={i} style={s.sourceChip}>
@@ -426,15 +460,9 @@ export default function RoadStatusScreen() {
               </View>
             </View>
 
-            {/* ── Refresh Action Button ── */}
-            <Pressable
-              style={({ pressed }) => [s.refreshBtn, pressed && s.pressed]}
-              onPress={fetchStatus}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
+            {/* Refresh */}
+            <Pressable style={({ pressed }) => [s.refreshBtn, pressed && s.pressed]} onPress={fetchStatus} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#fff" /> : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="refresh-outline" size={18} color="#fff" />
                   <Text style={s.refreshBtnText}>Refresh Road Status</Text>
@@ -449,105 +477,57 @@ export default function RoadStatusScreen() {
   );
 }
 
-// ── Professional Styling ─────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  content:   { padding: Spacing.four, gap: Spacing.four, paddingBottom: 120 },
-
-  // Header
-  header:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  container: { flex: 1, backgroundColor: '#f8fafc', paddingTop: NAV_HEIGHT },
+  content: {
+    padding: Spacing.four,
+    gap: Spacing.four,
+    paddingBottom: 120,
+    maxWidth: 800,
+    width: '100%',
+    alignSelf: 'center' as const,
+  },
+  header:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title:    { fontSize: 24, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 },
-  subtitle: { fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '500' },
-  liveBadge:{
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#ecfdf5', paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: '#a7f3d0',
-  },
-  liveText: { fontSize: 11, color: '#059669', fontWeight: '800', letterSpacing: 0.5 },
+  title:     { fontSize: 24, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5 },
+  subtitle:  { fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '500' },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#ecfdf5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#a7f3d0' },
+  liveText:  { fontSize: 11, color: '#059669', fontWeight: '800', letterSpacing: 0.5 },
+  pulseDot:  { width: 8, height: 8, borderRadius: 4 },
 
-  // Search card
-  searchCard: {
-    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 12,
-    borderWidth: 1, borderColor: '#e2e8f0',
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
-  },
+  searchCard:       { backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 12, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
   searchCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  searchLabel: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
-  searchRow:  { flexDirection: 'row', gap: 8 },
-  inputContainer: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0',
-    borderRadius: 14, paddingHorizontal: 12,
-  },
-  inputIcon: { marginRight: 6 },
-  searchInput:{
-    flex: 1, paddingVertical: 11, fontSize: 14, color: '#0f172a', fontWeight: '600',
-  },
-  searchBtn:  {
-    backgroundColor: '#0284c7', paddingHorizontal: 20, borderRadius: 14,
-    justifyContent: 'center', alignItems: 'center', minWidth: 64,
-  },
-  searchBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 14 },
-  chipsWrapper: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  placeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#f0f9ff', paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 10, borderWidth: 1, borderColor: '#bae6fd',
-  },
-  placeChipText: { fontSize: 12, color: '#0369a1', fontWeight: '700' },
-  myLocBtn:   {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: '#f0f9ff', borderRadius: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: '#bae6fd', marginTop: 2,
-  },
-  myLocText: { color: '#0284c7', fontWeight: '800', fontSize: 13 },
+  searchLabel:      { fontSize: 13, fontWeight: '800', color: '#0f172a' },
+  searchRow:        { flexDirection: 'row', gap: 8 },
+  inputContainer:   { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 14, paddingHorizontal: 12 },
+  inputIcon:        { marginRight: 6 },
+  searchInput:      { flex: 1, paddingVertical: 11, fontSize: 14, color: '#0f172a', fontWeight: '600' },
+  searchBtn:        { backgroundColor: '#0284c7', paddingHorizontal: 20, borderRadius: 14, justifyContent: 'center', alignItems: 'center', minWidth: 52 },
+  searchBtnText:    { color: '#ffffff', fontWeight: '800', fontSize: 14 },
+  chipsWrapper:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  placeChip:        { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0f9ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#bae6fd' },
+  placeChipText:    { fontSize: 12, color: '#0369a1', fontWeight: '700' },
+  myLocBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#f0f9ff', borderRadius: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#bae6fd', marginTop: 2 },
+  myLocText:        { color: '#0284c7', fontWeight: '800', fontSize: 13 },
 
-  // Loading
-  loadingCard: {
-    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.six,
-    alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#e0f2fe',
-  },
+  loadingCard:  { backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.five, alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#e0f2fe' },
   loadingTitle: { fontSize: 15, color: '#0f172a', fontWeight: '800', textAlign: 'center' },
   loadingSteps: { fontSize: 12, color: '#64748b', textAlign: 'center' },
 
-  // Error
-  errorCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#fef2f2', borderRadius: 16, padding: Spacing.four,
-    borderWidth: 1, borderColor: '#fca5a5',
-  },
+  errorCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fef2f2', borderRadius: 16, padding: Spacing.four, borderWidth: 1, borderColor: '#fca5a5' },
   errorText: { flex: 1, fontSize: 13, color: '#991b1b', fontWeight: '600' },
 
-  // Location pill
-  locPill: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
-    borderRadius: 18, padding: Spacing.three, gap: 12,
-    borderWidth: 1, borderColor: '#e2e8f0',
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
-  },
-  locPillIconBg: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: '#e0f2fe',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  locArea:     { fontSize: 16, fontWeight: '900', color: '#0f172a', letterSpacing: -0.3 },
-  locRoad:     { fontSize: 12, color: '#64748b', fontWeight: '600' },
-  roadTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  locRoadType: { fontSize: 11, color: '#64748b', fontWeight: '600' },
-  cBadge:      {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1,
-  },
-  pulseDot:    { width: 8, height: 8, borderRadius: 4 },
-  cBadgeText:  { fontWeight: '800', fontSize: 13 },
+  locPill:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 18, padding: Spacing.three, gap: 12, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
+  locPillIconBg: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#e0f2fe', justifyContent: 'center', alignItems: 'center' },
+  locArea:       { fontSize: 16, fontWeight: '900', color: '#0f172a', letterSpacing: -0.3 },
+  locRoad:       { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  roadTypeRow:   { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  locRoadType:   { fontSize: 11, color: '#64748b', fontWeight: '600' },
+  cBadge:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
+  cBadgeText:    { fontWeight: '800', fontSize: 13 },
 
-  // DNA Hero Card (Dark Glassmorphism)
-  dnaHero: {
-    backgroundColor: '#0f172a', borderRadius: 24, padding: Spacing.five, gap: 14,
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15, shadowRadius: 16, elevation: 6,
-  },
+  dnaHero:        { backgroundColor: '#0f172a', borderRadius: 24, padding: Spacing.five, gap: 14, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 6 },
   dnaHeroTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   dnaHeroLeft:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dnaIconBg:      { width: 44, height: 44, borderRadius: 14, backgroundColor: '#1e293b', justifyContent: 'center', alignItems: 'center' },
@@ -558,31 +538,39 @@ const s = StyleSheet.create({
   dnaScoreMax:    { fontSize: 13, color: '#475569', fontWeight: '700', textAlign: 'right' },
   barTrack:       { height: 10, backgroundColor: '#1e293b', borderRadius: 6, overflow: 'hidden' },
   barFill:        { height: '100%', borderRadius: 6 },
-  dnaInterpret:   {
-    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12,
-    borderRadius: 14, borderWidth: 1,
-  },
-  dnaInterpretText:  { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
-  timeBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#1e293b', paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 20, alignSelf: 'flex-start',
-  },
-  timeBadgeText: { fontSize: 12, color: '#94a3b8', fontWeight: '700' },
+  dnaInterpret:   { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 14, borderWidth: 1 },
+  dnaInterpretText: { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  timeBadge:      { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1e293b', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, alignSelf: 'flex-start' },
+  timeBadgeText:  { fontSize: 12, color: '#94a3b8', fontWeight: '700' },
 
-  // Metrics Grid
+  // ML Panel
+  mlCard: { backgroundColor: '#faf5ff', borderRadius: 20, padding: Spacing.four, gap: 12, borderWidth: 1.5, borderColor: '#ddd6fe', shadowColor: '#7c3aed', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  mlHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  mlTitle:  { fontSize: 14, fontWeight: '900', color: '#4c1d95', flex: 1 },
+  mlBadge:  { backgroundColor: '#ede9fe', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  mlBadgeText: { fontSize: 11, fontWeight: '800', color: '#7c3aed' },
+  mlLoadRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mlLoadText:  { fontSize: 13, color: '#7c3aed', fontWeight: '600' },
+  mlResultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  mlResultPill:{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, padding: 10, borderRadius: 12 },
+  mlResultText:{ fontSize: 16, fontWeight: '900' },
+  mlConfBlock: { alignItems: 'center', minWidth: 56 },
+  mlConfNum:   { fontSize: 24, fontWeight: '900', lineHeight: 26 },
+  mlConfLabel: { fontSize: 10, color: '#64748b', fontWeight: '700' },
+  mlConfBarTrack: { height: 7, backgroundColor: '#ede9fe', borderRadius: 4, overflow: 'hidden' },
+  mlConfBarFill:  { height: '100%', borderRadius: 4 },
+  mlInfoRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  mlInfoChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#ede9fe', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  mlInfoChipText: { fontSize: 11, color: '#7c3aed', fontWeight: '700' },
+  mlNote:      { fontSize: 11, color: '#7c3aed', fontWeight: '500', opacity: 0.8 },
+
   metricsRow:  { flexDirection: 'row', gap: Spacing.three },
-  metricCard:  {
-    flex: 1, backgroundColor: '#ffffff', borderRadius: 18, padding: Spacing.three, gap: 6,
-    borderWidth: 1, borderColor: '#f1f5f9', alignItems: 'center',
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
-  },
-  metricHeader: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metricCard:  { flex: 1, backgroundColor: '#ffffff', borderRadius: 18, padding: Spacing.three, gap: 6, borderWidth: 1, borderColor: '#f1f5f9', alignItems: 'center', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  metricHeader:{ flexDirection: 'row', alignItems: 'center', gap: 4 },
   metricLabel: { fontSize: 10, color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   metricValue: { fontSize: 16, fontWeight: '900', color: '#0f172a', textAlign: 'center' },
   metricSub:   { fontSize: 11, color: '#64748b', textAlign: 'center', fontWeight: '500' },
 
-  // Speedometer
   speedBox:    { width: '100%', gap: 4 },
   speedRowTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexWrap: 'wrap' },
   speedNum:    { fontSize: 20, fontWeight: '900' },
@@ -590,25 +578,13 @@ const s = StyleSheet.create({
   speedSep:    { fontSize: 14, color: '#cbd5e1', marginHorizontal: 2 },
   freeFlowNum: { fontSize: 14, fontWeight: '700', color: '#475569' },
 
-  // Reason Card
-  reasonCard: {
-    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 10,
-    borderWidth: 1, borderColor: '#e2e8f0',
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
-  },
+  reasonCard:   { backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 10, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
   reasonHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   reasonTitle:  { fontSize: 15, fontWeight: '900', color: '#0f172a' },
-  reasonTag:    {
-    fontSize: 10, color: '#0284c7', fontWeight: '800',
-    backgroundColor: '#e0f2fe', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
-  },
-  reasonBody: { fontSize: 14, color: '#334155', lineHeight: 22, fontWeight: '500' },
+  reasonTag:    { fontSize: 10, color: '#0284c7', fontWeight: '800', backgroundColor: '#e0f2fe', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  reasonBody:   { fontSize: 14, color: '#334155', lineHeight: 22, fontWeight: '500' },
 
-  // Pipeline Stepper
-  pipelineCard: {
-    backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 12,
-    borderWidth: 1, borderColor: '#e2e8f0',
-  },
+  pipelineCard:  { backgroundColor: '#ffffff', borderRadius: 20, padding: Spacing.four, gap: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   pipelineTitle: { fontSize: 15, fontWeight: '900', color: '#0f172a' },
   pipelineSteps: { gap: 0 },
   pipelineStep:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 4 },
@@ -616,19 +592,10 @@ const s = StyleSheet.create({
   pipeStepLabel: { fontSize: 11, color: '#64748b', fontWeight: '600' },
   pipeStepValue: { fontSize: 13, color: '#0f172a', fontWeight: '700' },
   sourceChipsRow:{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  sourceChip:    {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#f0f9ff', paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: 8, borderWidth: 1, borderColor: '#bae6fd',
-  },
-  sourceChipText: { fontSize: 11, color: '#0284c7', fontWeight: '700' },
+  sourceChip:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0f9ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#bae6fd' },
+  sourceChipText:{ fontSize: 11, color: '#0284c7', fontWeight: '700' },
 
-  // Refresh Button
-  refreshBtn: {
-    backgroundColor: '#0f172a', paddingVertical: 16, borderRadius: 18, alignItems: 'center',
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
-  },
+  refreshBtn:     { backgroundColor: '#0f172a', paddingVertical: 16, borderRadius: 18, alignItems: 'center', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
   refreshBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '800', letterSpacing: 0.3 },
   pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
 });
