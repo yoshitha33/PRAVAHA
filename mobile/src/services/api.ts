@@ -249,16 +249,19 @@ export async function calculateRoute(origin: string, destination: string): Promi
     else if (destLower.includes('koramangala') || (destLower.length >= 4 && 'koramangala'.includes(destLower))) { dLat = 12.9352; dLng = 77.6245; }
     else if (destLower.includes('silk') || destLower.includes('orr') || destLower.includes('outer ring road') || (destLower.length >= 4 && 'silk board'.includes(destLower))) { dLat = 12.9176; dLng = 77.6244; }
 
-    const currentPoly = [
-      { latitude: oLat, longitude: oLng },
-      { latitude: (oLat + dLat) / 2 + 0.002, longitude: (oLng + dLng) / 2 - 0.002 },
-      { latitude: dLat, longitude: dLng },
-    ];
-    const altPoly = [
-      { latitude: oLat, longitude: oLng },
-      { latitude: (oLat + dLat) / 2 - 0.003, longitude: (oLng + dLng) / 2 + 0.003 },
-      { latitude: dLat, longitude: dLng },
-    ];
+    const currentPoly: Array<{ latitude: number; longitude: number }> = [];
+    const altPoly: Array<{ latitude: number; longitude: number }> = [];
+    const steps = 20;
+    const deltaLat = dLat - oLat;
+    const deltaLng = dLng - oLng;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const arc1 = Math.sin(t * Math.PI) * 0.008;
+      const arc2 = Math.sin(t * Math.PI) * -0.008;
+      currentPoly.push({ latitude: oLat + t * deltaLat + arc1, longitude: oLng + t * deltaLng - arc1 * 0.7 });
+      altPoly.push({ latitude: oLat + t * deltaLat + arc2, longitude: oLng + t * deltaLng - arc2 * 0.7 });
+    }
 
     return {
       origin: origin || 'Marathahalli, Bengaluru',
